@@ -6,11 +6,11 @@ public class AbnormalityPresenceDetector : MonoBehaviour
 {
     [Header("Detection Source")]
     [SerializeField] private string anomalyTag = "Anomary";
-    [SerializeField] private bool useTagOnly = true;
+    [SerializeField] private bool useTagOnly = false;
     [SerializeField] private string resourcesFolder = "Prefabs/Abnormalities";
     [SerializeField] private Transform scanRoot;
     [SerializeField] private bool includeInactive = true;
-    [SerializeField] private bool useMarkerOnly = true;
+    [SerializeField] private bool useMarkerOnly = false;
 
     [Header("Auto Scan")]
     [SerializeField] private bool scanOnStart = true;

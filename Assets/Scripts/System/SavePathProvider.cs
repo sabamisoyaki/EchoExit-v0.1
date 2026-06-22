@@ -18,6 +18,17 @@ public static class SavePathProvider
     public static string GetSaveFilePath(string fileName, string defaultFileName = "anomalies.json")
     {
         var resolvedName = string.IsNullOrWhiteSpace(fileName) ? defaultFileName : fileName;
+        resolvedName = Path.GetFileName(resolvedName);
+        if (string.IsNullOrWhiteSpace(resolvedName))
+        {
+            resolvedName = defaultFileName;
+        }
+
+        foreach (char invalidChar in Path.GetInvalidFileNameChars())
+        {
+            resolvedName = resolvedName.Replace(invalidChar, '_');
+        }
+
         return Path.Combine(SaveDirectory, resolvedName);
     }
 }

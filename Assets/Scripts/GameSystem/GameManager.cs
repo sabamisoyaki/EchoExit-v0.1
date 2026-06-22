@@ -1,4 +1,4 @@
-﻿// Assets/Scripts/GameManager.cs
+// Assets/Scripts/GameManager.cs
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -417,7 +417,7 @@ public class GameManager : MonoBehaviour
 
     private void SetupEnvironment(int sceneId)
     {
-        if (correctCount >= goalThreshold && goalPrefab)
+        if (goalMode == GoalMode.ShowGoalOnly && correctCount >= goalThreshold && goalPrefab)
         {
             var g = Instantiate(goalPrefab, new Vector3(0, 0.5f, 6), Quaternion.identity, worldRoot);
             spawned.Add(g);
@@ -495,18 +495,16 @@ public class GameManager : MonoBehaviour
         // 次ラウンドは異変を出すか？（抽選結果をリロード先へ持ち回る）
         bool wantAnomalyNext = (Random.value < anomalySpawnChance);
 
-        // ★ Normal SceneIDs が無いなら「同じsceneIdをリロードして異変なし状態」を作る
-        // （あなたのログでは Normal が空なのでここが効く）
         int nextId;
         if (!wantAnomalyNext)
         {
-            nextId = currentSceneId;          // sceneIdは変えない
-            pendingSpawnAnomaly = false;      // ただし異変は出さない
-            LogVerbose("🧼 Next round: RELOAD same sceneId with NO anomaly");
+            nextId = PickSceneIdByAnomaly(wantAnomaly: false, excludeSceneId: currentSceneId);
+            pendingSpawnAnomaly = false;
+            LogVerbose("🧼 Next round: anomaly OFF");
         }
         else
         {
-            nextId = PickNextSceneIdRandom(currentSceneId, excludeCurrent: true);
+            nextId = PickSceneIdByAnomaly(wantAnomaly: true, excludeSceneId: currentSceneId);
             pendingSpawnAnomaly = true;       // 異変を出す
             LogVerbose("🧪 Next round: anomaly ON");
         }
@@ -554,13 +552,44 @@ public class GameManager : MonoBehaviour
     // ==========================
     // ゴール
     // ==========================
+    public void OnGoalTriggerReached()
+    {
+        if (inputLocked) return;
+        HandleGoalReached();
+    }
+
     private void HandleGoalReached()
     {
         inputLocked = true;
-        correctCount = 0;
-        LogVerbose("🎉 ゴール到達：endTitleシーンへ遷移");
-        SceneManager.LoadScene("endTitle");
+        LogVerbose($"🎉 ゴール到達：goalMode={goalMode}");
 
+        switch (goalMode)
+        {
+            case GoalMode.ShowGoalOnly:
+                ShowGoalAndUnlock();
+                break;
+            case GoalMode.LoadScene:
+                correctCount = 0;
+                SceneManager.LoadScene(string.IsNullOrWhiteSpace(nextSceneName) ? "endTitle" : nextSceneName);
+                break;
+            case GoalMode.PlayMovie:
+                Debug.LogWarning("GoalMode.PlayMovie is not configured with a movie player yet. Falling back to endTitle.");
+                correctCount = 0;
+                SceneManager.LoadScene("endTitle");
+                break;
+        }
+    }
+
+    private void ShowGoalAndUnlock()
+    {
+        if (!goalShown && goalPrefab)
+        {
+            var g = Instantiate(goalPrefab, new Vector3(0, 0.5f, 6), Quaternion.identity, worldRoot);
+            spawned.Add(g);
+            goalShown = true;
+        }
+
+        inputLocked = false;
     }
 
 
@@ -600,6 +629,10 @@ public class GameManager : MonoBehaviour
 
         var go = Instantiate(prefab, pos, rot, worldRoot);
         ApplyAnomalyTag(go, item.isAnomaly);
+        if (item.isAnomaly && go.GetComponent<AbnormalityInstanceMarker>() == null)
+        {
+            go.AddComponent<AbnormalityInstanceMarker>();
+        }
         spawned.Add(go);
     }
 
