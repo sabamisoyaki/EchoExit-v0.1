@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Collections.Generic;
 using UnityEngine;
@@ -57,6 +57,14 @@ public static class SaveManager
     {
         try
         {
+            if (slotData == null)
+            {
+                Debug.LogError("❌ Save failed: slotData is null.");
+                return;
+            }
+
+            slotData.meta ??= new SaveMeta();
+
             if (!Directory.Exists(SaveDirectory))
                 Directory.CreateDirectory(SaveDirectory);
 
@@ -87,6 +95,14 @@ public static class SaveManager
         {
             string json = File.ReadAllText(path);
             var slot = JsonUtility.FromJson<SaveSlotData>(json);
+            if (slot == null)
+            {
+                Debug.LogError($"❌ Load failed: slot {slotIndex} data is empty or invalid.");
+                return null;
+            }
+
+            slot.meta ??= new SaveMeta { slotIndex = slotIndex };
+            slot.scenes ??= new List<SceneFileDto>();
             if (slot.meta.sceneCount == 0 && slot.scenes != null)
                 slot.meta.sceneCount = slot.scenes.Count;
             return slot;
@@ -120,7 +136,13 @@ public static class SaveManager
             {
                 var json = File.ReadAllText(path);
                 var slot = JsonUtility.FromJson<SaveSlotData>(json);
-                list.Add(slot.meta);
+                list.Add(slot?.meta ?? new SaveMeta
+                {
+                    slotIndex = i,
+                    title = $"Corrupted Slot {i:D2}",
+                    savedAtIso = "",
+                    sceneCount = 0
+                });
             }
             catch
             {

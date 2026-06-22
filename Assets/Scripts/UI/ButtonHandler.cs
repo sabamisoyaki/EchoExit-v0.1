@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using TMPro;
@@ -80,7 +80,6 @@ public class ButtonHandler : MonoBehaviour
 
         if (!File.Exists(finalPath))
         {
-            File.WriteAllText(finalPath, "");
             return false;
         }
 
