@@ -68,6 +68,7 @@ public class GameManager : MonoBehaviour
     private static int correctCount = 0;
     private bool inputLocked = true;
     private bool goalShown = false;
+    private bool goalTransitionStarted = false;
     private bool isLoaded = false;
 
     private int currentSceneId;
@@ -116,8 +117,23 @@ public class GameManager : MonoBehaviour
             LogVerbose("AbnormalityPresenceDetector was missing and has been added to GameManager.");
         }
 
+        abnormalityDetector.SetScanRoot(worldRoot);
+
         // JSONは必要なら読む
         if (cachedFile == null) LoadSceneDataOnce();
+
+        // 次ラウンド用の抽選結果があれば優先し、sceneId の選択にも反映する。
+        if (pendingSpawnAnomaly.HasValue)
+        {
+            spawnAnomalyThisRound = pendingSpawnAnomaly.Value;
+            pendingSpawnAnomaly = null;
+            LogVerbose($"🎛 spawnAnomalyThisRound (PENDING): {spawnAnomalyThisRound}");
+        }
+        else
+        {
+            spawnAnomalyThisRound = (Random.value < anomalySpawnChance);
+            LogVerbose($"🎛 spawnAnomalyThisRound (RANDOM): {spawnAnomalyThisRound} (chance={anomalySpawnChance * 100f:F0}%)");
+        }
 
         // ★ pendingSceneId があれば最優先で採用
         if (pendingSceneId.HasValue)
@@ -135,7 +151,7 @@ public class GameManager : MonoBehaviour
             }
             else if (sceneIdSource == SceneIdSource.RandomFromJson)
             {
-                currentSceneId = ChooseSceneIdFromJsonOrFallback();
+                currentSceneId = PickSceneIdByAnomaly(spawnAnomalyThisRound, -1);
                 LogVerbose($"🎲 Using RANDOM-FROM-JSON sceneId: {currentSceneId}");
             }
             else
@@ -143,18 +159,6 @@ public class GameManager : MonoBehaviour
                 currentSceneId = SceneManager.GetActiveScene().buildIndex;
                 LogVerbose($"🎬 Using BUILD-INDEX sceneId: {currentSceneId}");
             }
-        }
-        // ★ 次ラウンドの「異変を出す/出さない」を確定（pendingがなければ通常抽選）
-        if (pendingSpawnAnomaly.HasValue)
-        {
-            spawnAnomalyThisRound = pendingSpawnAnomaly.Value;
-            pendingSpawnAnomaly = null;
-            LogVerbose($"🎛 spawnAnomalyThisRound (PENDING): {spawnAnomalyThisRound}");
-        }
-        else
-        {
-            spawnAnomalyThisRound = (Random.value < anomalySpawnChance);
-            LogVerbose($"🎛 spawnAnomalyThisRound (RANDOM): {spawnAnomalyThisRound} (chance={anomalySpawnChance * 100f:F0}%)");
         }
 
 
@@ -171,7 +175,7 @@ public class GameManager : MonoBehaviour
 
     private IEnumerator Boot()
     {
-        inputLocked = true; isLoaded = false; goalShown = false;
+        inputLocked = true; isLoaded = false; goalShown = false; goalTransitionStarted = false;
 
         if (cachedFile == null) LoadSceneDataOnce();
 
@@ -181,36 +185,6 @@ public class GameManager : MonoBehaviour
         isLoaded = true; inputLocked = false;
         yield break;
     }
-    /// <summary>
-    /// JSONの sceneId 候補からランダム選択。候補が無ければ BuildIndex にフォールバック。
-    /// </summary>
-    private int ChooseSceneIdFromJsonOrFallback()
-    {
-        // 念のため二重防御。まだ読んでなければここで読む。
-        if (cachedFile == null)
-        {
-            try { LoadSceneDataOnce(); }
-            catch (System.Exception e)
-            {
-                Debug.LogError($"❌ JSON読込失敗（fallbackへ）: {e.Message}");
-            }
-        }
-
-        if (idToBlocks != null && idToBlocks.Count > 0)
-        {
-            var ids = idToBlocks.Keys.ToList();
-            int pick = ids[Random.Range(0, ids.Count)];
-            LogVerbose($"🎲 Using RANDOM sceneId from JSON: {pick} (候補: [{string.Join(", ", ids)}])");
-            return pick;
-        }
-
-        // 候補が無い場合のフォールバック（明示ログ）
-        int fb = SceneManager.GetActiveScene().buildIndex;
-        Debug.LogError("❌ JSONから選べるSceneID候補が見つかりません → BUILD-INDEXにフォールバック: " + fb);
-        return fb;
-    }
-
-
     // ==========================
     // データ読み込み（1回だけ）
     // ==========================
@@ -386,7 +360,11 @@ public class GameManager : MonoBehaviour
                         continue;
                     }
 
-                    SpawnItem(it);
+                    if (!SpawnItem(it))
+                    {
+                        continue;
+                    }
+
                     LogSpawn($"[SPAWN] prefabId={it.prefabId} isAnomaly={it.isAnomaly}");
 
                     placed++;
@@ -417,12 +395,9 @@ public class GameManager : MonoBehaviour
 
     private void SetupEnvironment(int sceneId)
     {
-        if (correctCount >= goalThreshold && goalPrefab)
+        if (correctCount >= goalThreshold)
         {
-            var g = Instantiate(goalPrefab, new Vector3(0, 0.5f, 6), Quaternion.identity, worldRoot);
-            spawned.Add(g);
-            goalShown = true;
-            LogVerbose("🏁 ゴール出現（達成済）");
+            ShowGoal();
         }
 
         if (forwardTriggerPrefab && forwardTriggerPoint)
@@ -492,24 +467,13 @@ public class GameManager : MonoBehaviour
             return;
         }
 
-        // 次ラウンドは異変を出すか？（抽選結果をリロード先へ持ち回る）
+        // 次ラウンドの異変有無と一致する sceneId を選び、リロード先へ持ち回る。
         bool wantAnomalyNext = (Random.value < anomalySpawnChance);
-
-        // ★ Normal SceneIDs が無いなら「同じsceneIdをリロードして異変なし状態」を作る
-        // （あなたのログでは Normal が空なのでここが効く）
-        int nextId;
-        if (!wantAnomalyNext)
-        {
-            nextId = currentSceneId;          // sceneIdは変えない
-            pendingSpawnAnomaly = false;      // ただし異変は出さない
-            LogVerbose("🧼 Next round: RELOAD same sceneId with NO anomaly");
-        }
-        else
-        {
-            nextId = PickNextSceneIdRandom(currentSceneId, excludeCurrent: true);
-            pendingSpawnAnomaly = true;       // 異変を出す
-            LogVerbose("🧪 Next round: anomaly ON");
-        }
+        int nextId = PickSceneIdByAnomaly(wantAnomalyNext, currentSceneId);
+        pendingSpawnAnomaly = wantAnomalyNext;
+        LogVerbose(wantAnomalyNext
+            ? "🧪 Next round: anomaly ON"
+            : "🧼 Next round: anomaly OFF");
 
         pendingSceneId = nextId;
 
@@ -557,10 +521,99 @@ public class GameManager : MonoBehaviour
     private void HandleGoalReached()
     {
         inputLocked = true;
-        correctCount = 0;
-        LogVerbose("🎉 ゴール到達：endTitleシーンへ遷移");
-        SceneManager.LoadScene("endTitle");
 
+        switch (goalMode)
+        {
+            case GoalMode.ShowGoalOnly:
+                if (!ShowGoal())
+                {
+                    Debug.LogError("GameManager: goalPrefab is missing. Falling back to endTitle.");
+                    CompleteGoal();
+                }
+                break;
+
+            case GoalMode.LoadScene:
+                CompleteGoal(string.IsNullOrWhiteSpace(nextSceneName) ? "endTitle" : nextSceneName);
+                break;
+
+            case GoalMode.PlayMovie:
+                if (goalMovie == null)
+                {
+                    Debug.LogError("GameManager: goalMovie is missing. Falling back to endTitle.");
+                    CompleteGoal();
+                    break;
+                }
+
+                PlayGoalMovie();
+                break;
+        }
+    }
+
+    private bool ShowGoal()
+    {
+        if (goalShown) return true;
+        if (goalPrefab == null) return false;
+
+        var goal = Instantiate(goalPrefab, new Vector3(0, 0.5f, 6), Quaternion.identity, worldRoot);
+        spawned.Add(goal);
+        goalShown = true;
+        inputLocked = true;
+        LogVerbose("🏁 ゴール出現（達成済）");
+        return true;
+    }
+
+    private void PlayGoalMovie()
+    {
+        var player = GetComponent<VideoPlayer>();
+        if (player == null)
+        {
+            player = gameObject.AddComponent<VideoPlayer>();
+        }
+
+        player.playOnAwake = false;
+        player.isLooping = false;
+        player.clip = goalMovie;
+        player.renderMode = VideoRenderMode.CameraNearPlane;
+        player.targetCamera = Camera.main;
+        player.loopPointReached -= OnGoalMovieFinished;
+        player.loopPointReached += OnGoalMovieFinished;
+        player.errorReceived -= OnGoalMovieError;
+        player.errorReceived += OnGoalMovieError;
+        player.Play();
+    }
+
+    private void OnGoalMovieFinished(VideoPlayer player)
+    {
+        player.loopPointReached -= OnGoalMovieFinished;
+        player.errorReceived -= OnGoalMovieError;
+        CompleteGoal();
+    }
+
+    private void OnGoalMovieError(VideoPlayer player, string message)
+    {
+        player.loopPointReached -= OnGoalMovieFinished;
+        player.errorReceived -= OnGoalMovieError;
+        Debug.LogError($"GameManager: goal movie playback failed: {message}");
+        CompleteGoal();
+    }
+
+    public void CompleteGoal()
+    {
+        CompleteGoal("endTitle");
+    }
+
+    private void CompleteGoal(string sceneName)
+    {
+        if (goalTransitionStarted) return;
+
+        goalTransitionStarted = true;
+        inputLocked = true;
+        correctCount = 0;
+        pendingSceneId = null;
+        pendingSpawnAnomaly = null;
+        UpdateCorrectCountUI();
+        LogVerbose($"🎉 ゴール完了：{sceneName}シーンへ遷移");
+        SafeLoadSceneByName(currentSceneId, sceneName);
     }
 
 
@@ -569,31 +622,13 @@ public class GameManager : MonoBehaviour
     // ==========================
     // ユーティリティ
     // ==========================
-    private int PickNextSceneIdRandom(int current, bool excludeCurrent)
+    private bool SpawnItem(ItemDto item)
     {
-        if (idToBlocks == null || idToBlocks.Count == 0) return current;
-
-        var ids = idToBlocks.Keys.ToList();
-
-        if (excludeCurrent && ids.Count > 1)
-            ids.Remove(current);
-
-        if (ids.Count == 0)
-            return current;
-
-        int idx = Random.Range(0, ids.Count);
-        return ids[idx];
-    }
-
-
-
-    private void SpawnItem(ItemDto item)
-    {
-        if (item == null || string.IsNullOrEmpty(item.prefabId)) return;
+        if (item == null || string.IsNullOrEmpty(item.prefabId)) return false;
 
         string path = ResolvePrefabPath(item.prefabId);
         var prefab = Resources.Load<GameObject>(path);
-        if (!prefab) { Debug.LogWarning($"Prefab not found: {path}"); return; }
+        if (!prefab) { Debug.LogWarning($"Prefab not found: {path}"); return false; }
 
         var pos = (item.position != null) ? item.position.ToVector3() : Vector3.zero;
         var rot = (item.rotation != null) ? item.rotation.ToQuaternion() : Quaternion.identity;
@@ -601,6 +636,7 @@ public class GameManager : MonoBehaviour
         var go = Instantiate(prefab, pos, rot, worldRoot);
         ApplyAnomalyTag(go, item.isAnomaly);
         spawned.Add(go);
+        return true;
     }
 
     private string ResolvePrefabPath(string prefabId)

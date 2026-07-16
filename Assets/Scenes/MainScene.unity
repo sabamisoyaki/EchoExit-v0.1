@@ -1117,13 +1117,8 @@ MonoBehaviour:
   backTriggerPrefab: {fileID: 8907422151171599028, guid: bb9fd4cdc2538ee498ecab8546f32829, type: 3}
   forwardTriggerPoint: {fileID: 28227137}
   backTriggerPoint: {fileID: 473425160}
-  normalPrefabs:
-  - {fileID: 2228858305774147493, guid: 608dff6a46be2ea449f136dfbd0a2b7a, type: 3}
-  - {fileID: 8163347386517955876, guid: 22ab0b86559fcf8429efdc1514ddd3a3, type: 3}
-  - {fileID: 7350001195766002489, guid: eeadbf426b263c6458804772f380bc07, type: 3}
-  - {fileID: 7350001195766002489, guid: 96f75d91210e3e5429307870e88dc91f, type: 3}
-  - {fileID: 8163347386517955876, guid: ec7a0dd4d65a3ab4cbb5033b2e4a2273, type: 3}
-  normalCount: 3
+  normalPrefabs: []
+  normalCount: 0
   deterministicNormal: 0
   sharedString: {fileID: 11400000, guid: 2649bae211af0934a99cc07181deeb69, type: 2}
   goalMode: 0

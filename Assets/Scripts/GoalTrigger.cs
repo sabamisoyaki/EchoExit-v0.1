@@ -8,7 +8,15 @@ public class GoalTrigger : MonoBehaviour
         if (other.CompareTag("Player"))
         {
             Debug.Log("Goal reached");
-            SceneManager.LoadScene("endTitle");
+            GameManager gameManager = FindFirstObjectByType<GameManager>();
+            if (gameManager != null)
+            {
+                gameManager.CompleteGoal();
+            }
+            else
+            {
+                SceneManager.LoadScene("endTitle");
+            }
         }
     }
 }
