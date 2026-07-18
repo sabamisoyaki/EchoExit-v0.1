@@ -76,11 +76,11 @@ public class ButtonHandler : MonoBehaviour
             return false;
         }
 
-        finalPath = SavePathProvider.GetSaveFilePath(sharedString.value, "anomalies.json");
+        // ファイルが無い/空ならデフォルトデータを展開してからチェックする
+        finalPath = SavePathProvider.EnsureSaveFileWithDefaultData(sharedString.value);
 
         if (!File.Exists(finalPath))
         {
-            File.WriteAllText(finalPath, "");
             return false;
         }
 

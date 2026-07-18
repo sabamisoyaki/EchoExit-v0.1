@@ -9,7 +9,7 @@ public class StartButtonHandler : MonoBehaviour
     [SerializeField] private Button playButton;
     [SerializeField] private TMP_Text warningMessageText;
 
-    [SerializeField] private string fileName = "anomalies.json";
+    [SerializeField] private string fileName = SavePathProvider.DefaultFileName;
 
     private bool isDataValid = false;
     private string finalPath;
@@ -58,7 +58,7 @@ public class StartButtonHandler : MonoBehaviour
 
     private bool CheckJsonFile()
     {
-        finalPath = SavePathProvider.GetSaveFilePath(fileName, "anomalies.json");
+        finalPath = SavePathProvider.GetSaveFilePath(fileName);
 
         // ファイルが無ければ空ファイルを生成
         if (!File.Exists(finalPath))

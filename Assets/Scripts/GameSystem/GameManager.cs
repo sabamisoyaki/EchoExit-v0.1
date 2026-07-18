@@ -37,7 +37,7 @@ public class GameManager : MonoBehaviour
     public VideoClip goalMovie;    // GoalMode=PlayMovie 用
     public int goalThreshold = 8; // 連続正解数
     public TMP_Text correctCountText; // ← UI 参照を追加
-    public float anomalySpawnChance = 0.5f; // 異常検知の閾値（未使用）
+    public float anomalySpawnChance = 0.5f; // 各ラウンドで異変を出す確率
 
 
 
@@ -45,7 +45,7 @@ public class GameManager : MonoBehaviour
 
     public enum SceneIdSource { BuildIndex, Manual, RandomFromJson }
     [Header("初期SceneIDソース")]
-    public SceneIdSource sceneIdSource = SceneIdSource.BuildIndex;
+    public SceneIdSource sceneIdSource = SceneIdSource.RandomFromJson;
     public int manualSceneId = -1; // Manualのとき使用
 
     [Header("SceneID -> Unityシーン名 マッピング")]
@@ -98,7 +98,12 @@ public class GameManager : MonoBehaviour
     // ==========================
     private void Start()
     {
-
+        // pending が無い＝ラウンド持ち回りではない（タイトルからの新規プレイ等）。
+        // static な correctCount が前回プレイの値を持ち越さないようリセットする。
+        if (!pendingSceneId.HasValue && !pendingSpawnAnomaly.HasValue)
+        {
+            correctCount = 0;
+        }
 
         if (!worldRoot)
         {
@@ -158,6 +163,15 @@ public class GameManager : MonoBehaviour
             {
                 currentSceneId = SceneManager.GetActiveScene().buildIndex;
                 LogVerbose($"🎬 Using BUILD-INDEX sceneId: {currentSceneId}");
+
+                // buildIndex は EditMode の保存 ID（1始まりの連番）と一致しないことが多い。
+                // JSON に該当ブロックが無ければ抽選にフォールバックしてラウンドを成立させる。
+                if (idToBlocks != null && idToBlocks.Count > 0 && !idToBlocks.ContainsKey(currentSceneId))
+                {
+                    int fallbackId = PickSceneIdByAnomaly(spawnAnomalyThisRound, -1);
+                    Debug.LogWarning($"⚠ buildIndex={currentSceneId} は JSON に存在しないため sceneId={fallbackId} にフォールバックします");
+                    currentSceneId = fallbackId;
+                }
             }
         }
 
@@ -188,16 +202,11 @@ public class GameManager : MonoBehaviour
     // ==========================
     // データ読み込み（1回だけ）
     // ==========================
-    private string SavePath
-    {
-        get
-        {
-            string fileName = string.IsNullOrEmpty(sharedString?.value)
-                ? "anomalies.json"
-                : sharedString.value;
-            return SavePathProvider.GetSaveFilePath(fileName, "anomalies.json");
-        }
-    }
+    private string SaveFileName => string.IsNullOrEmpty(sharedString?.value)
+        ? SavePathProvider.DefaultFileName
+        : sharedString.value;
+
+    private string SavePath => SavePathProvider.GetSaveFilePath(SaveFileName);
     // sceneIdの分類キャッシュ
     private List<int> anomalySceneIds = new(); // isAnomaly=true を含む sceneId
     private List<int> normalSceneIds = new(); // isAnomaly=true を一切含まない sceneId
@@ -206,6 +215,9 @@ public class GameManager : MonoBehaviour
 
     private void LoadSceneDataOnce()
     {
+        // 初回起動などでファイルが無い/空の場合はデフォルトデータを展開する
+        SavePathProvider.EnsureSaveFileWithDefaultData(SaveFileName);
+
         if (!File.Exists(SavePath))
         {
             Debug.LogError($"❌ データ未検出: {SavePath}");
@@ -485,26 +497,27 @@ public class GameManager : MonoBehaviour
 
     private void SafeLoadSceneByName(int sceneId, string sceneName)
     {
-        try
+        // LoadScene は存在しないシーン名でも例外を投げない（エラーログのみ）ため、
+        // 事前にロード可否を確認してフォールバックする。
+        if (Application.CanStreamedLevelBeLoaded(sceneName))
         {
-            LogVerbose($"➡ 正解：SceneID {sceneId} → UnityScene \"{sceneName}\" をロード（名前指定）");
+            LogVerbose($"➡ SceneID {sceneId} → UnityScene \"{sceneName}\" をロード（名前指定）");
             SceneManager.LoadScene(sceneName, LoadSceneMode.Single);
+            return;
         }
-        catch (System.Exception ex)
+
+        Debug.LogError($"❌ シーン '{sceneName}' はビルド設定に存在しません (sceneId={sceneId})");
+
+        if (sceneName != "endTitle" && Application.CanStreamedLevelBeLoaded("endTitle"))
         {
-            Debug.LogError($"❌ シーン名ロード失敗: id={sceneId}, name='{sceneName}', msg={ex.Message}");
-            // 最終フォールバック：現行シーン
-            try
-            {
-                var cur = SceneManager.GetActiveScene().name;
-                Debug.LogWarning($"↩ フォールバックとして現行シーンを再ロード: {cur}");
-                SceneManager.LoadScene(cur, LoadSceneMode.Single);
-            }
-            catch (System.Exception exFallback)
-            {
-                Debug.LogError($"🚨 フォールバックも失敗: {exFallback.Message}");
-            }
+            Debug.LogWarning("↩ フォールバックとして endTitle をロード");
+            SceneManager.LoadScene("endTitle", LoadSceneMode.Single);
+            return;
         }
+
+        var cur = SceneManager.GetActiveScene().name;
+        Debug.LogWarning($"↩ フォールバックとして現行シーンを再ロード: {cur}");
+        SceneManager.LoadScene(cur, LoadSceneMode.Single);
     }
     private void UpdateCorrectCountUI()
     {

@@ -431,8 +431,8 @@ public class EditModeManager : MonoBehaviour
     {
         get
         {
-            string fileName = string.IsNullOrEmpty(sharedString?.value) ? "anomalies.json" : sharedString.value;
-            return SavePathProvider.GetSaveFilePath(fileName, "anomalies.json");
+            string fileName = string.IsNullOrEmpty(sharedString?.value) ? SavePathProvider.DefaultFileName : sharedString.value;
+            return SavePathProvider.GetSaveFilePath(fileName);
         }
     }
 
