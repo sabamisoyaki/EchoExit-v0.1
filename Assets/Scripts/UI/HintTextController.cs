@@ -5,16 +5,16 @@ using System.Collections;
 public class HintTextController : MonoBehaviour
 {
     [SerializeField] private TextMeshProUGUI hintText;
-    [SerializeField] private float delayBeforeShow = 1f; // ‰½•bŒã‚É•\¦
-    [SerializeField] private float showDuration = 2f;   // ‰½•b•\¦
-    [SerializeField] private float fadeTime = 1f;       // ƒtƒF[ƒhŠÔ
+    [SerializeField] private float delayBeforeShow = 1f; // ä½•ç§’å¾Œã«è¡¨ç¤º
+    [SerializeField] private float showDuration = 2f;   // ä½•ç§’è¡¨ç¤º
+    [SerializeField] private float fadeTime = 1f;       // ãƒ•ã‚§ãƒ¼ãƒ‰æ™‚é–“
 
     void Start()
     {
         if (hintText != null)
         {
             Color c = hintText.color;
-            c.a = 0f; // Å‰‚Í“§–¾
+            c.a = 0f; // æœ€åˆã¯é€æ˜
             hintText.color = c;
 
             StartCoroutine(ShowAndFadeOut());
@@ -23,18 +23,18 @@ public class HintTextController : MonoBehaviour
 
     private IEnumerator ShowAndFadeOut()
     {
-        // •\¦‘O‚É‘Ò‹@
+        // è¡¨ç¤ºå‰ã«å¾…æ©Ÿ
         yield return new WaitForSeconds(delayBeforeShow);
 
-        // ƒpƒb‚Æ•\¦
+        // ãƒ‘ãƒƒã¨è¡¨ç¤º
         Color c = hintText.color;
         c.a = 1f;
         hintText.color = c;
 
-        // w’èŠÔ•\¦
+        // æŒ‡å®šæ™‚é–“è¡¨ç¤º
         yield return new WaitForSeconds(showDuration);
 
-        // ƒtƒF[ƒhƒAƒEƒg
+        // ãƒ•ã‚§ãƒ¼ãƒ‰ã‚¢ã‚¦ãƒˆ
         float elapsed = 0f;
         while (elapsed < fadeTime)
         {
@@ -45,7 +45,7 @@ public class HintTextController : MonoBehaviour
             yield return null;
         }
 
-        // ÅŒã‚ÉUI‚²‚Æíœ
+        // æœ€å¾Œã«UIã”ã¨å‰Šé™¤
         Destroy(gameObject);
     }
 }

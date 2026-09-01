@@ -7,14 +7,14 @@ public class InstructionToggle : MonoBehaviour
 
     void Awake()
     {
-        // ‚±‚ÌƒXƒNƒŠƒvƒg‚ğ InstructionPanel ‚É’¼ÚƒAƒ^ƒbƒ`‚·‚é‘z’è
+        // ã“ã®ã‚¹ã‚¯ãƒªãƒ—ãƒˆã‚’ InstructionPanel ã«ç›´æ¥ã‚¢ã‚¿ãƒƒãƒã™ã‚‹æƒ³å®š
         canvasGroup = gameObject.GetComponent<CanvasGroup>();
         if (canvasGroup == null)
         {
             canvasGroup = gameObject.AddComponent<CanvasGroup>();
         }
 
-        // Å‰‚Í”ñ•\¦ó‘Ô
+        // æœ€åˆã¯éè¡¨ç¤ºçŠ¶æ…‹
         SetVisible(false);
     }
 
