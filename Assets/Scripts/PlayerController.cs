@@ -5,7 +5,7 @@ public class PlayerMovement : MonoBehaviour
 {
     public float speed = 5f;
     public float gravity = -9.81f;
-    public float groundCheckOffset = -0.1f; // Ú’n•â³
+    public float groundCheckOffset = -0.1f; // æ¥åœ°è£œæ­£
 
     private CharacterController controller;
     private Vector3 velocity;
@@ -31,20 +31,20 @@ public class PlayerMovement : MonoBehaviour
 
         Vector3 move = forward * z + right * x;
 
-        // ˆÚ“®
+        // ç§»å‹•
         controller.Move(move * speed * Time.deltaTime);
 
-        // Ú’n”»’è
+        // æ¥åœ°åˆ¤å®š
         if (controller.isGrounded && velocity.y < 0)
         {
-            velocity.y = groundCheckOffset; // ‚í‚¸‚©‚É‰ºŒü‚«‚Å’n–Ê‚É“\‚è•t‚¯‚é
+            velocity.y = groundCheckOffset; // ã‚ãšã‹ã«ä¸‹å‘ãã§åœ°é¢ã«è²¼ã‚Šä»˜ã‘ã‚‹
         }
         else
         {
-            velocity.y += gravity * Time.deltaTime; // ‹ó’†‚È‚çd—Í‰ÁZ
+            velocity.y += gravity * Time.deltaTime; // ç©ºä¸­ãªã‚‰é‡åŠ›åŠ ç®—
         }
 
-        // d—Í“K—p
+        // é‡åŠ›é©ç”¨
         controller.Move(velocity * Time.deltaTime);
     }
 }

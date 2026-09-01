@@ -60,6 +60,8 @@ public class GameManager : MonoBehaviour
     [Header("Debug Log")]
     [SerializeField] private bool verboseLogs = false;
     [SerializeField] private bool spawnTraceLogs = false;
+    [Header("Player Feedback")]
+    [SerializeField] private RoundFeedbackController roundFeedback;
 
     // ==========================
     // ランタイム状態
@@ -108,6 +110,12 @@ public class GameManager : MonoBehaviour
         if (abnormalityDetector == null)
         {
             abnormalityDetector = FindFirstObjectByType<AbnormalityPresenceDetector>();
+        }
+
+        if (roundFeedback == null)
+        {
+            roundFeedback = GetComponent<RoundFeedbackController>();
+            if (roundFeedback == null) roundFeedback = gameObject.AddComponent<RoundFeedbackController>();
         }
 
         if (abnormalityDetector == null)
@@ -163,6 +171,7 @@ public class GameManager : MonoBehaviour
         LogVerbose($"📁 persistentDataPath: {Application.persistentDataPath}");
         StartCoroutine(Boot());
         UpdateCorrectCountUI();
+        roundFeedback.ShowFirstRunTutorial();
     }
     private bool spawnAnomalyThisRound = true;           // このラウンドで異変を出すか
     private static bool? pendingSpawnAnomaly = null;     // 次ラウンド用（リロード持ち回り）
@@ -232,6 +241,7 @@ public class GameManager : MonoBehaviour
 
     private void LoadSceneDataOnce()
     {
+        SavePathProvider.EnsureSeedFileExists(SavePath);
         if (!File.Exists(SavePath))
         {
             Debug.LogError($"❌ データ未検出: {SavePath}");
@@ -484,6 +494,16 @@ public class GameManager : MonoBehaviour
         }
 
         UpdateCorrectCountUI();
+
+        StartCoroutine(CompleteRoundAfterFeedback(isCorrect, hasAnomaly));
+    }
+
+    private IEnumerator CompleteRoundAfterFeedback(bool isCorrect, bool hadAnomaly)
+    {
+        if (roundFeedback != null)
+        {
+            yield return roundFeedback.PlayResult(isCorrect, hadAnomaly, correctCount, goalThreshold);
+        }
 
         // ここでまずゴール判定。到達時は専用シーンへ遷移（この時点では再ロードしない）
         if (correctCount >= goalThreshold)

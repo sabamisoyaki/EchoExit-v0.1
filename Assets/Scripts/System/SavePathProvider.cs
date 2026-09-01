@@ -31,4 +31,22 @@ public static class SavePathProvider
 
         return Path.Combine(SaveDirectory, resolvedName);
     }
+
+    public static bool EnsureSeedFileExists(string destinationPath, string resourceName = "default_scenes")
+    {
+        if (File.Exists(destinationPath)) return true;
+
+        var seed = Resources.Load<TextAsset>(resourceName);
+        if (seed == null)
+        {
+            Debug.LogError($"Initial scene data resource was not found: {resourceName}");
+            return false;
+        }
+
+        var directory = Path.GetDirectoryName(destinationPath);
+        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+        File.WriteAllText(destinationPath, seed.text);
+        Debug.Log($"Created initial scene data: {destinationPath}");
+        return true;
+    }
 }
