@@ -31,14 +31,23 @@ public class RoundFeedbackController : MonoBehaviour
         SetOverlayVisible(false);
     }
 
-    public void ShowFirstRunTutorial()
+    public void ShowFirstRunTutorial(bool isLearningRound = false)
     {
-        if (PlayerPrefs.GetInt(TutorialSeenKey, 0) != 0) return;
+        bool tutorialSeen = PlayerPrefs.GetInt(TutorialSeenKey, 0) != 0;
+        if (tutorialSeen && !isLearningRound) return;
 
-        PlayerPrefs.SetInt(TutorialSeenKey, 1);
-        PlayerPrefs.Save();
+        if (!tutorialSeen)
+        {
+            PlayerPrefs.SetInt(TutorialSeenKey, 1);
+            PlayerPrefs.Save();
+        }
+        string introduction = isLearningRound && !tutorialSeen
+            ? "まず、この場所を覚えてください\n異変なし：先へ進む　／　異変あり：引き返す"
+            : isLearningRound
+                ? "まず、この場所を覚えてください"
+            : "部屋をよく観察してください\n異変なし：先へ進む　／　異変あり：引き返す";
         StartCoroutine(ShowTemporaryMessage(
-            "部屋をよく観察してください\n異変なし：先へ進む　／　異変あり：引き返す",
+            introduction,
             4.5f));
     }
 
@@ -58,7 +67,9 @@ public class RoundFeedbackController : MonoBehaviour
         string detail = hadAnomaly ? "この部屋には異変があった" : "この部屋に異変はなかった";
         messageText.text = isCorrect
             ? $"正解\n{detail}"
-            : $"不正解\n{detail}";
+            : hadAnomaly
+                ? $"不正解：見落とした\n{detail}"
+                : $"不正解：疑いすぎた\n{detail}";
         messageText.color = isCorrect
             ? new Color(0.55f, 1f, 0.75f)
             : new Color(1f, 0.45f, 0.45f);

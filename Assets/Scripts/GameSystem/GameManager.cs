@@ -62,6 +62,10 @@ public class GameManager : MonoBehaviour
     [SerializeField] private bool spawnTraceLogs = false;
     [Header("Player Feedback")]
     [SerializeField] private RoundFeedbackController roundFeedback;
+    [SerializeField] private FirstRunLearningController learningRound;
+    [SerializeField] private ProgressionAtmosphereController atmosphere;
+    [SerializeField] private RoundTransitionController transition;
+    [SerializeField] private RoundAnomalyCoordinator anomalyCoordinator;
 
     // ==========================
     // ランタイム状態
@@ -71,6 +75,8 @@ public class GameManager : MonoBehaviour
     private bool inputLocked = true;
     private bool goalShown = false;
     private bool isLoaded = false;
+    private bool roundResolutionStarted = false;
+    private AnomalyCategory selectedAnomalyCategory = AnomalyCategory.None;
 
     private int currentSceneId;
     private static int? pendingSceneId = null; // ★ 追加：次ラウンド用のIDを持ち回り
@@ -118,6 +124,29 @@ public class GameManager : MonoBehaviour
             if (roundFeedback == null) roundFeedback = gameObject.AddComponent<RoundFeedbackController>();
         }
 
+        learningRound ??= GetComponent<FirstRunLearningController>();
+        atmosphere ??= GetComponent<ProgressionAtmosphereController>();
+        transition ??= GetComponent<RoundTransitionController>();
+        anomalyCoordinator ??= GetComponent<RoundAnomalyCoordinator>();
+        if (learningRound == null)
+        {
+            Debug.LogWarning("GameManager: FirstRunLearningController was not configured; adding a safe runtime fallback.");
+            learningRound = gameObject.AddComponent<FirstRunLearningController>();
+        }
+        if (atmosphere == null)
+        {
+            Debug.LogWarning("GameManager: ProgressionAtmosphereController was not configured; atmosphere progression is disabled.");
+        }
+        if (transition == null)
+        {
+            Debug.LogWarning("GameManager: RoundTransitionController was not configured; adding a safe runtime fallback.");
+            transition = gameObject.AddComponent<RoundTransitionController>();
+        }
+        if (anomalyCoordinator == null)
+        {
+            Debug.LogWarning("GameManager: RoundAnomalyCoordinator is missing; only visual anomaly detection is available.");
+        }
+
         if (abnormalityDetector == null)
         {
             abnormalityDetector = gameObject.AddComponent<AbnormalityPresenceDetector>();
@@ -127,8 +156,13 @@ public class GameManager : MonoBehaviour
         // JSONは必要なら読む
         if (cachedFile == null) LoadSceneDataOnce();
 
-        // ★ pendingSceneId があれば最優先で採用
-        if (pendingSceneId.HasValue)
+        bool isLearningRound = learningRound.BeginIfNeeded();
+
+        if (isLearningRound)
+        {
+            currentSceneId = PickSceneIdByAnomaly(wantAnomaly: false, excludeSceneId: -1);
+        }
+        else if (pendingSceneId.HasValue)
         {
             currentSceneId = pendingSceneId.Value;
             pendingSceneId = null; // 消費
@@ -153,7 +187,12 @@ public class GameManager : MonoBehaviour
             }
         }
         // ★ 次ラウンドの「異変を出す/出さない」を確定（pendingがなければ通常抽選）
-        if (pendingSpawnAnomaly.HasValue)
+        if (isLearningRound)
+        {
+            spawnAnomalyThisRound = false;
+            pendingSpawnAnomaly = null;
+        }
+        else if (pendingSpawnAnomaly.HasValue)
         {
             spawnAnomalyThisRound = pendingSpawnAnomaly.Value;
             pendingSpawnAnomaly = null;
@@ -165,16 +204,42 @@ public class GameManager : MonoBehaviour
             LogVerbose($"🎛 spawnAnomalyThisRound (RANDOM): {spawnAnomalyThisRound} (chance={anomalySpawnChance * 100f:F0}%)");
         }
 
+        if (isLearningRound || !spawnAnomalyThisRound)
+        {
+            selectedAnomalyCategory = AnomalyCategory.None;
+            pendingAnomalyCategory = -1;
+        }
+        else if (pendingAnomalyCategory >= 0)
+        {
+            selectedAnomalyCategory = (AnomalyCategory)pendingAnomalyCategory;
+            pendingAnomalyCategory = -1;
+        }
+        else if (spawnAnomalyThisRound && anomalyCoordinator != null)
+        {
+            selectedAnomalyCategory = anomalyCoordinator.ChooseCategory(SceneContainsVisualAnomaly(currentSceneId));
+        }
+
 
 
 
         LogVerbose($"📁 persistentDataPath: {Application.persistentDataPath}");
         StartCoroutine(Boot());
         UpdateCorrectCountUI();
-        roundFeedback.ShowFirstRunTutorial();
+        atmosphere?.Apply(correctCount);
+        roundFeedback.ShowFirstRunTutorial(isLearningRound);
     }
     private bool spawnAnomalyThisRound = true;           // このラウンドで異変を出すか
     private static bool? pendingSpawnAnomaly = null;     // 次ラウンド用（リロード持ち回り）
+    private static int pendingAnomalyCategory = -1;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetSessionState()
+    {
+        correctCount = 0;
+        pendingSceneId = null;
+        pendingSpawnAnomaly = null;
+        pendingAnomalyCategory = -1;
+    }
 
 
 
@@ -186,6 +251,14 @@ public class GameManager : MonoBehaviour
 
         BuildWorldForSceneId(currentSceneId);
         SetupEnvironment(currentSceneId);
+
+        if (anomalyCoordinator != null)
+        {
+            if (spawnAnomalyThisRound && selectedAnomalyCategory == AnomalyCategory.None)
+                selectedAnomalyCategory = anomalyCoordinator.ChooseCategory(includeVisual: hasAnomaly);
+            anomalyCoordinator.BeginRound(selectedAnomalyCategory);
+            hasAnomaly = anomalyCoordinator.HasConfiguredAnomaly;
+        }
 
         isLoaded = true; inputLocked = false;
         yield break;
@@ -353,6 +426,12 @@ public class GameManager : MonoBehaviour
         return SceneManager.GetActiveScene().buildIndex;
     }
 
+    private bool SceneContainsVisualAnomaly(int sceneId)
+    {
+        if (idToBlocks == null || !idToBlocks.TryGetValue(sceneId, out var blocks)) return false;
+        return blocks.Any(block => (block.items ?? System.Array.Empty<ItemDto>()).Any(item => item != null && item.isAnomaly));
+    }
+
 
 
 
@@ -390,7 +469,8 @@ public class GameManager : MonoBehaviour
                     // DEBUG: 何を出そうとしているか
                     LogSpawn($"[SPAWN?] roundAnomaly={spawnAnomalyThisRound} sceneId={sceneId} prefabId={it.prefabId} isAnomaly={it.isAnomaly}");
 
-                    if (it.isAnomaly && !spawnAnomalyThisRound)
+                    bool suppressVisualAnomaly = anomalyCoordinator != null && selectedAnomalyCategory != AnomalyCategory.Visual;
+                    if (it.isAnomaly && (!spawnAnomalyThisRound || suppressVisualAnomaly))
                     {
                         LogSpawn($"[SKIP ] prefabId={it.prefabId} (isAnomaly=true but round OFF)");
                         continue;
@@ -469,16 +549,14 @@ public class GameManager : MonoBehaviour
     // ==========================
     public void PlayerChose(bool goForward)
     {
-        if (inputLocked || !isLoaded) { LogVerbose("⌛ 入力不可"); return; }
+        if (inputLocked || !isLoaded || roundResolutionStarted) { LogVerbose("⌛ 入力不可"); return; }
         if (goalShown) { LogVerbose("🏁 ゴール状態"); return; }
 
         inputLocked = true; // ← 早めにロックして連打による多重呼び出しを防止
+        roundResolutionStarted = true;
 
-        // 判定直前に実シーンを再スキャンして、hasAnomaly を最新化。
-        if (abnormalityDetector != null)
-        {
-            hasAnomaly = abnormalityDetector.ScanNow();
-        }
+        // 音・時間差・プレイヤー異変にはGameObjectがないため、正式なラウンド状態を使う。
+        if (anomalyCoordinator != null) hasAnomaly = anomalyCoordinator.HasConfiguredAnomaly;
 
         bool isCorrect = (!hasAnomaly && goForward) || (hasAnomaly && !goForward);
 
@@ -494,6 +572,8 @@ public class GameManager : MonoBehaviour
         }
 
         UpdateCorrectCountUI();
+        learningRound?.CompleteLearningRound();
+        anomalyCoordinator?.ResetRound();
 
         StartCoroutine(CompleteRoundAfterFeedback(isCorrect, hasAnomaly));
     }
@@ -505,6 +585,11 @@ public class GameManager : MonoBehaviour
             yield return roundFeedback.PlayResult(isCorrect, hadAnomaly, correctCount, goalThreshold);
         }
 
+        if (!isCorrect && transition != null)
+        {
+            yield return transition.PlayIncorrectEffect();
+        }
+
         // ここでまずゴール判定。到達時は専用シーンへ遷移（この時点では再ロードしない）
         if (correctCount >= goalThreshold)
         {
@@ -514,6 +599,10 @@ public class GameManager : MonoBehaviour
 
         // 次ラウンドは異変を出すか？（抽選結果をリロード先へ持ち回る）
         bool wantAnomalyNext = (Random.value < anomalySpawnChance);
+        AnomalyCategory nextCategory = wantAnomalyNext && anomalyCoordinator != null
+            ? anomalyCoordinator.ChooseCategory(includeVisual: anomalySceneIds.Count > 0)
+            : (wantAnomalyNext ? AnomalyCategory.Visual : AnomalyCategory.None);
+        if (wantAnomalyNext && nextCategory == AnomalyCategory.None) wantAnomalyNext = false;
 
         int nextId;
         if (!wantAnomalyNext)
@@ -524,15 +613,17 @@ public class GameManager : MonoBehaviour
         }
         else
         {
-            nextId = PickSceneIdByAnomaly(wantAnomaly: true, excludeSceneId: currentSceneId);
+            nextId = PickSceneIdByAnomaly(wantAnomaly: nextCategory == AnomalyCategory.Visual, excludeSceneId: currentSceneId);
             pendingSpawnAnomaly = true;       // 異変を出す
-            LogVerbose("🧪 Next round: anomaly ON");
+            LogVerbose($"🧪 Next round: anomaly ON ({nextCategory})");
         }
 
         pendingSceneId = nextId;
+        pendingAnomalyCategory = (int)nextCategory;
 
         var curName = SceneManager.GetActiveScene().name;
         LogVerbose($"➡ 次ラウンド sceneId={nextId} spawnAnomaly={pendingSpawnAnomaly} → \"{curName}\" を再ロード");
+        if (transition != null) yield return transition.FadeToBlack();
         SceneManager.LoadScene(curName, LoadSceneMode.Single);
 
     }
@@ -581,6 +672,9 @@ public class GameManager : MonoBehaviour
     private void HandleGoalReached()
     {
         inputLocked = true;
+        pendingSceneId = null;
+        pendingSpawnAnomaly = null;
+        pendingAnomalyCategory = -1;
         LogVerbose($"🎉 ゴール到達：goalMode={goalMode}");
 
         switch (goalMode)

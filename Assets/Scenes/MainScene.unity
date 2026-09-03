@@ -1093,6 +1093,13 @@ GameObject:
   m_Component:
   - component: {fileID: 1869737632}
   - component: {fileID: 1869737631}
+  - component: {fileID: 1869737633}
+  - component: {fileID: 1869737634}
+  - component: {fileID: 1869737635}
+  - component: {fileID: 1869737636}
+  - component: {fileID: 1869737637}
+  - component: {fileID: 1869737638}
+  - component: {fileID: 1869737639}
   m_Layer: 0
   m_Name: GameManager
   m_TagString: Untagged
@@ -1129,13 +1136,124 @@ MonoBehaviour:
   goalMode: 0
   nextSceneName: 
   goalMovie: {fileID: 0}
-  goalThreshold: 6
+  goalThreshold: 8
   correctCountText: {fileID: 521070288}
   anomalySpawnChance: 0.666
   sceneIdSource: 2
   manualSceneId: 0
   sceneBindings: []
   worldRoot: {fileID: 0}
+  abnormalityDetector: {fileID: 0}
+  anomalyTagName: Anomary
+  verboseLogs: 0
+  spawnTraceLogs: 0
+  roundFeedback: {fileID: 0}
+  learningRound: {fileID: 1869737633}
+  atmosphere: {fileID: 1869737634}
+  transition: {fileID: 1869737635}
+  anomalyCoordinator: {fileID: 1869737636}
+--- !u!114 &1869737633
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1869737630}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 344c54a3169c4b36adc21b693c002cfb, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  optionalStatusText: {fileID: 0}
+--- !u!114 &1869737634
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1869737630}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4b0f91906c0c4935958c63b7521b941b, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  sceneLights: []
+  ambience: {fileID: 0}
+--- !u!114 &1869737635
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1869737630}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e10c5d15f3fc455dafa393924896dcca, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  fadeDuration: 0.35
+  failureHoldDuration: 0.2
+--- !u!114 &1869737636
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1869737630}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b9591d5507d84b5a97f99d1842235a62, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  audioAnomaly: {fileID: 1869737637}
+  timedAnomaly: {fileID: 1869737638}
+  playerAnomaly: {fileID: 1869737639}
+  debugLogs: 0
+--- !u!114 &1869737637
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1869737630}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 364a179cda33451fa8a756eebe4107c7, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  ambienceSource: {fileID: 0}
+  referenceAmbience: {fileID: 8300000, guid: 3b107615f7629ea4bb3208e23b87f2f0, type: 3}
+  referenceVolume: 0.28
+  anomalousPitch: 0.92
+--- !u!114 &1869737638
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1869737630}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0efea4b9901c4a95a9a35f1ccd504624, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  targetLight: {fileID: 203844588}
+  delaySeconds: 8
+  intensityMultiplier: 0.45
+--- !u!114 &1869737639
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1869737630}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 159ccdc0a6ac41f3a79880741a227d7a, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  targetCamera: {fileID: 961739752}
+  fovOffset: 5
 --- !u!4 &1869737632
 Transform:
   m_ObjectHideFlags: 0
