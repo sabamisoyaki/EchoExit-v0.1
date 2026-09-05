@@ -6,6 +6,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using UnityEngine.SceneManagement;
+using UnityEngine.EventSystems;
 
 #region Runtime Meta
 /// <summary>
@@ -42,11 +43,14 @@ public class EditModeManager : MonoBehaviour
     public Button quitButton;
     public TMP_Text placedCountText;
     public TMP_Text selectedPrefabText;
+    [SerializeField] private TMP_Dropdown sceneDropdown;
+    [SerializeField] private TMP_Text sceneStatusText;
 
 
     [Header("保存設定")]
     [SerializeField] private int currentSceneId = 1;
     [SerializeField] private SharedString sharedString;
+    [SerializeField, Min(1)] private int maxAnomaliesPerScene = 3;
 
 
 
@@ -58,41 +62,34 @@ public class EditModeManager : MonoBehaviour
     private GameObject previewInstance;
     private string previewPrefabId; // 再生成判定用
     private bool isUIActive = false;
-
-    #region DTO (Save Data)
-    [Serializable]
-    public class SnapshotItem
+    private bool hasUnsavedChanges = false;
+    private bool suppressSceneDropdownCallback = false;
+    private int selectedSceneDropdownIndex = 0;
+    private int newSceneId = 1;
+    private readonly List<int> sceneDropdownIds = new List<int>();
+    private readonly List<SceneItemData> unresolvedItems = new List<SceneItemData>();
+    private SceneDataFile allScenesData = new SceneDataFile();
+    private Transform editPlayer;
+    private static readonly string[] MvpAnomalyPrefabIds =
     {
-        public string prefabId;
-        public Vector3 position;
-        public Vector3 rotation; // Euler
-        public bool isAnomaly;
-    }
-
-    [Serializable]
-    public class SceneSnapshot
-    {
-        public int sceneId;
-        public bool anomalyHouse;
-        public List<SnapshotItem> items = new List<SnapshotItem>();
-    }
-
-    [Serializable]
-    public class AllScenesData
-    {
-        public List<SceneSnapshot> scenes = new List<SceneSnapshot>();
-    }
-
-    private AllScenesData allScenesData = new AllScenesData();
-    #endregion
+        "changeColorBox",
+        "anomaryShirinkBox",
+        "DollPrefab",
+        "bears",
+        "ChairPrefab",
+        "wall",
+        "footstepEcho"
+    };
 
     #region Unity Lifecycle
     private void Start()
     {
+        EnsureMvpAnomalyPalette();
+
         // UIイベント登録
         if (saveButton != null) saveButton.onClick.AddListener(OnSaveButtonClicked);
         if (exitButton != null) exitButton.onClick.AddListener(OnExitEditMode);
-        if (quitButton != null) quitButton.onClick.AddListener(OnQuitButtonClicked);
+        if (quitButton != null && quitButton != exitButton) quitButton.onClick.AddListener(OnQuitButtonClicked);
 
 
         // LineRenderer初期化
@@ -103,6 +100,21 @@ public class EditModeManager : MonoBehaviour
 
         // 既存保存の読み込み（存在時）
         LoadAllScenesIfExists();
+        var playerObject = GameObject.FindGameObjectWithTag("Player");
+        if (playerObject != null)
+        {
+            editPlayer = playerObject.transform;
+            if (playerObject.GetComponent<PlayerInteractionController>() == null)
+            {
+                playerObject.AddComponent<PlayerInteractionController>();
+            }
+        }
+        EnsureSceneSelectorUi();
+        if (sceneDropdown != null)
+        {
+            sceneDropdown.onValueChanged.AddListener(OnSceneDropdownChanged);
+        }
+        RefreshSceneDropdown(currentSceneId);
     }
 
     private void Update()
@@ -132,17 +144,21 @@ public class EditModeManager : MonoBehaviour
         }
 
         // --- ショートカットキー ---
-        if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
+        // UI操作中や入力欄フォーカス中は保存・遷移を発火させない。
+        if (!isUIActive && !IsTextInputFocused() && !IsSceneDropdownInteractionActive())
         {
-            OnSaveButtonClicked();
-        }
-        if (Input.GetKeyDown(KeyCode.L))   // 編集終了
-        {
-            OnExitEditMode();
-        }
-        if (Input.GetKeyDown(KeyCode.O))   // 終了
-        {
-            OnQuitButtonClicked();
+            if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
+            {
+                OnSaveButtonClicked();
+            }
+            if (Input.GetKeyDown(KeyCode.L))   // 編集終了
+            {
+                OnExitEditMode();
+            }
+            if (Input.GetKeyDown(KeyCode.O))   // 終了
+            {
+                OnQuitButtonClicked();
+            }
         }
 
 #if UNITY_EDITOR
@@ -165,8 +181,28 @@ public class EditModeManager : MonoBehaviour
         // ハンドラ解除（メモリリーク予防）
         if (exitButton != null) exitButton.onClick.RemoveListener(OnExitEditMode);
         if (saveButton != null) saveButton.onClick.RemoveListener(OnSaveButtonClicked);
+        if (quitButton != null && quitButton != exitButton) quitButton.onClick.RemoveListener(OnQuitButtonClicked);
+        if (sceneDropdown != null) sceneDropdown.onValueChanged.RemoveListener(OnSceneDropdownChanged);
     }
     #endregion
+
+    private void EnsureMvpAnomalyPalette()
+    {
+        var merged = new List<GameObject>();
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var prefab in anomalyPrefabs ?? Array.Empty<GameObject>())
+        {
+            if (prefab != null && names.Add(prefab.name)) merged.Add(prefab);
+        }
+
+        foreach (string prefabId in MvpAnomalyPrefabIds)
+        {
+            GameObject prefab = PrefabResolver.Load(prefabId);
+            if (prefab != null && names.Add(prefab.name)) merged.Add(prefab);
+        }
+
+        anomalyPrefabs = merged.ToArray();
+    }
 
     #region Input Handlers
     private void HandleCategorySwitch()
@@ -308,6 +344,28 @@ public class EditModeManager : MonoBehaviour
         var prefab = GetCurrentPrefab();
         if (prefab == null) return;
 
+        if (currentCategory == Category.Anomaly)
+        {
+            var placedAnomalies = FindObjectsByType<PlacedMeta>(FindObjectsSortMode.None)
+                .Where(meta => meta != null && meta.gameObject.activeInHierarchy && meta.isAnomaly)
+                .ToList();
+            int anomalyCount = placedAnomalies.Count;
+            if (anomalyCount >= maxAnomaliesPerScene)
+            {
+                SetSceneStatus($"異変は最大{maxAnomaliesPerScene}個まで配置できます。", true);
+                return;
+            }
+
+            bool placingAggressive = AnomalyRuntimeFactory.GetProfile(prefab.name).Aggressive;
+            bool alreadyHasAggressive = placedAnomalies.Any(meta =>
+                AnomalyRuntimeFactory.GetProfile(meta.prefabId).Aggressive);
+            if (placingAggressive && alreadyHasAggressive)
+            {
+                SetSceneStatus("追跡型の異変は1ステージにつき1個まで配置できます。", true);
+                return;
+            }
+        }
+
         if (!TryGetPlacement(prefab, out Vector3 pos, out Quaternion rot)) return;
 
         var go = Instantiate(prefab, pos, rot);
@@ -316,6 +374,14 @@ public class EditModeManager : MonoBehaviour
 
         meta.prefabId = prefab.name;
         meta.isAnomaly = (currentCategory == Category.Anomaly);
+        AnomalyRuntimeFactory.Configure(
+            go,
+            meta.prefabId,
+            meta.isAnomaly,
+            gameManager: null,
+            player: editPlayer,
+            threatsEnabled: false);
+        hasUnsavedChanges = true;
 
         Debug.Log($"設置: {meta.prefabId} at {pos} (Anomaly={meta.isAnomaly})");
     }
@@ -384,6 +450,11 @@ public class EditModeManager : MonoBehaviour
     {
         isUIActive = !isUIActive;
 
+        if (isUIActive)
+        {
+            HidePreview();
+        }
+
         Cursor.lockState = isUIActive ? CursorLockMode.None : CursorLockMode.Locked;
         Cursor.visible = isUIActive;
 
@@ -405,21 +476,214 @@ public class EditModeManager : MonoBehaviour
             selectedPrefabText.text = $"選択中: {(pf != null ? pf.name : "なし")}";
     }
 
+    private bool IsTextInputFocused()
+    {
+        var selected = EventSystem.current?.currentSelectedGameObject;
+        var inputField = selected != null ? selected.GetComponentInParent<TMP_InputField>() : null;
+        return inputField != null && inputField.isFocused;
+    }
+
+    private bool IsSceneDropdownInteractionActive()
+    {
+        if (sceneDropdown == null) return false;
+        if (sceneDropdown.IsExpanded) return true;
+
+        var selected = EventSystem.current?.currentSelectedGameObject;
+        return selected != null && selected.GetComponentInParent<TMP_Dropdown>() == sceneDropdown;
+    }
+
+    private void EnsureSceneSelectorUi()
+    {
+        if (sceneDropdown == null)
+        {
+            sceneDropdown = FindObjectsByType<TMP_Dropdown>(FindObjectsInactive.Include, FindObjectsSortMode.None)
+                .FirstOrDefault(dropdown => dropdown.name == "SceneIdDropdown");
+        }
+
+        if (sceneStatusText == null)
+        {
+            sceneStatusText = FindObjectsByType<TMP_Text>(FindObjectsInactive.Include, FindObjectsSortMode.None)
+                .FirstOrDefault(text => text.name == "SceneStatusText");
+        }
+
+        if (sceneDropdown == null || sceneStatusText == null)
+        {
+            Debug.LogWarning("EditModeManager: Scene選択UIの参照が不足しています。");
+        }
+    }
+
+    private void RefreshSceneDropdown(int preferredSceneId, bool loadSelection = true)
+    {
+        if (sceneDropdown == null) return;
+
+        sceneDropdownIds.Clear();
+        sceneDropdownIds.AddRange(allScenesData.GetSceneIds());
+        newSceneId = allScenesData.GetNextAvailableSceneId();
+
+        var options = sceneDropdownIds
+            .Select(sceneId => new TMP_Dropdown.OptionData($"Scene {sceneId}"))
+            .ToList();
+        options.Add(new TMP_Dropdown.OptionData($"新規 Scene {newSceneId}"));
+
+        int selectedIndex = sceneDropdownIds.IndexOf(preferredSceneId);
+        if (selectedIndex < 0)
+        {
+            selectedIndex = sceneDropdownIds.Count > 0 ? 0 : sceneDropdownIds.Count;
+        }
+
+        suppressSceneDropdownCallback = true;
+        sceneDropdown.ClearOptions();
+        sceneDropdown.AddOptions(options);
+        sceneDropdown.SetValueWithoutNotify(selectedIndex);
+        sceneDropdown.RefreshShownValue();
+        suppressSceneDropdownCallback = false;
+        selectedSceneDropdownIndex = selectedIndex;
+
+        if (loadSelection)
+        {
+            ApplySceneDropdownSelection(selectedIndex);
+        }
+    }
+
+    private void OnSceneDropdownChanged(int index)
+    {
+        if (suppressSceneDropdownCallback) return;
+
+        if (hasUnsavedChanges)
+        {
+            suppressSceneDropdownCallback = true;
+            sceneDropdown.SetValueWithoutNotify(selectedSceneDropdownIndex);
+            sceneDropdown.RefreshShownValue();
+            suppressSceneDropdownCallback = false;
+            SetSceneStatus("未保存の変更があります。保存してからSceneを切り替えてください。", true);
+            return;
+        }
+
+        ApplySceneDropdownSelection(index);
+    }
+
+    private void ApplySceneDropdownSelection(int index)
+    {
+        if (index < 0 || index > sceneDropdownIds.Count) return;
+
+        selectedSceneDropdownIndex = index;
+        if (index == sceneDropdownIds.Count)
+        {
+            PrepareNewScene(newSceneId);
+            return;
+        }
+
+        LoadSceneForEditing(sceneDropdownIds[index]);
+    }
+
+    private void PrepareNewScene(int sceneId)
+    {
+        ClearPlacedObjects();
+        unresolvedItems.Clear();
+        currentSceneId = sceneId;
+        hasUnsavedChanges = false;
+        SetSceneStatus($"新規 Scene {sceneId} を編集中", false);
+    }
+
+    private void LoadSceneForEditing(int sceneId)
+    {
+        var scene = allScenesData.GetMergedScene(sceneId);
+        if (scene == null)
+        {
+            PrepareNewScene(sceneId);
+            return;
+        }
+
+        ClearPlacedObjects();
+        unresolvedItems.Clear();
+        int loadedCount = 0;
+
+        foreach (var item in scene.items ?? new List<SceneItemData>())
+        {
+            if (item == null) continue;
+
+            if (!PrefabResolver.TryLoad(item.prefabId, out var prefab, out _))
+            {
+                unresolvedItems.Add(item.Clone());
+                continue;
+            }
+
+            var instance = Instantiate(prefab, item.position, Quaternion.Euler(item.rotation));
+            var meta = instance.GetComponent<PlacedMeta>();
+            if (meta == null) meta = instance.AddComponent<PlacedMeta>();
+            meta.prefabId = item.prefabId;
+            meta.isAnomaly = item.isAnomaly;
+            AnomalyRuntimeFactory.Configure(
+                instance,
+                item.prefabId,
+                item.isAnomaly,
+                gameManager: null,
+                player: editPlayer,
+                threatsEnabled: false);
+            loadedCount++;
+        }
+
+        currentSceneId = sceneId;
+        hasUnsavedChanges = false;
+        string unresolvedMessage = unresolvedItems.Count > 0
+            ? $" / 未解決Prefab {unresolvedItems.Count}件はデータを保持"
+            : string.Empty;
+        SetSceneStatus($"Scene {sceneId} を読込: {loadedCount}件{unresolvedMessage}", unresolvedItems.Count > 0);
+    }
+
+    private void ClearPlacedObjects()
+    {
+        HidePreview();
+        var metas = FindObjectsByType<PlacedMeta>(FindObjectsSortMode.None);
+        foreach (var meta in metas)
+        {
+            if (meta != null)
+            {
+                Destroy(meta.gameObject);
+            }
+        }
+    }
+
+    private void SetSceneStatus(string message, bool warning)
+    {
+        if (sceneStatusText != null)
+        {
+            sceneStatusText.text = message;
+            sceneStatusText.color = warning ? new Color(1f, 0.65f, 0.2f) : Color.white;
+        }
+
+        if (warning) Debug.LogWarning(message);
+        else Debug.Log(message);
+    }
+
     private void OnExitEditMode()
     {
-        Debug.Log("編集モード終了");
-        // 必要ならシーン遷移やUI無効化など
+        if (hasUnsavedChanges)
+        {
+            SetSceneStatus("未保存の変更があります。保存してから編集を終了してください。", true);
+            return;
+        }
+
+        SceneManager.LoadScene("MainScene");
     }
 
     private void OnSaveButtonClicked()
     {
         Debug.Log("配置確定ボタンが押されました");
-        SaveCurrentScene();
-        SceneManager.LoadScene("MainScene");
+        if (TrySaveCurrentScene())
+        {
+            SceneManager.LoadScene("MainScene");
+        }
     }
     #endregion
     private void OnQuitButtonClicked()
     {
+        if (hasUnsavedChanges)
+        {
+            SetSceneStatus("未保存の変更があります。保存してからタイトルへ戻ってください。", true);
+            return;
+        }
+
         Debug.Log("Quit"); // Unity のコンソールに出力
         SceneManager.LoadScene("tittle"); // ゲーム本編のシーン名に変更
     }
@@ -443,83 +707,103 @@ public class EditModeManager : MonoBehaviour
     {
         try
         {
-            if (!File.Exists(SavePath)) return;
-            var json = File.ReadAllText(SavePath);
-            if (string.IsNullOrWhiteSpace(json)) return;
+            SavePathProvider.EnsureSaveFileWithDefaultData(
+                string.IsNullOrEmpty(sharedString?.value) ? SavePathProvider.DefaultFileName : sharedString.value);
 
-            var loaded = JsonUtility.FromJson<AllScenesData>(json);
+            if (!File.Exists(SavePath))
+            {
+                allScenesData = new SceneDataFile();
+                return;
+            }
+
+            var json = File.ReadAllText(SavePath);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                allScenesData = new SceneDataFile();
+                return;
+            }
+
+            var loaded = JsonUtility.FromJson<SceneDataFile>(json);
             if (loaded != null && loaded.scenes != null)
             {
                 allScenesData = loaded;
+                allScenesData.Normalize();
             }
         }
         catch (Exception e)
         {
             Debug.LogWarning($"ロード失敗: {e.Message}");
-            allScenesData = new AllScenesData(); // フォールバック
+            allScenesData = new SceneDataFile(); // フォールバック
         }
     }
 
     public void SaveCurrentScene()
     {
+        TrySaveCurrentScene();
+    }
+
+    private bool TrySaveCurrentScene()
+    {
         var metas = FindObjectsByType<PlacedMeta>(FindObjectsSortMode.None);
-        var items = new List<SnapshotItem>();
-        bool anomaly = false;
+        var items = unresolvedItems.Select(item => item.Clone()).ToList();
 
         foreach (var m in metas)
         {
             if (!m.gameObject.activeInHierarchy) continue;
 
-            items.Add(new SnapshotItem
+            items.Add(new SceneItemData
             {
                 prefabId = string.IsNullOrEmpty(m.prefabId) ? m.gameObject.name.Replace("(Clone)", "") : m.prefabId,
                 position = m.transform.position,
                 rotation = m.transform.eulerAngles,
                 isAnomaly = m.isAnomaly
             });
-
-            anomaly |= m.isAnomaly;
         }
 
-        // --- 🔽 ここでIDの重複をチェックし、必要なら振り直す ---
-        int sceneIdToUse = currentSceneId;
-        bool alreadyExists = allScenesData.scenes.Any(s => s.sceneId == sceneIdToUse);
-
-        if (alreadyExists)
+        var snapshot = new SceneDataEntry
         {
-            // 使用されていないIDを探す（1〜9999の中から）
-            var usedIds = allScenesData.scenes.Select(s => s.sceneId).ToHashSet();
-            for (int i = 1; i < 10000; i++)
-            {
-                if (!usedIds.Contains(i))
-                {
-                    sceneIdToUse = i;
-                    break;
-                }
-            }
-            Debug.Log($"SceneID {currentSceneId} は使用中のため、新しい ID {sceneIdToUse} に変更しました。");
-        }
-
-        // スナップショット作成
-        var snapshot = new SceneSnapshot
-        {
-            sceneId = sceneIdToUse,
-            anomalyHouse = anomaly,
+            sceneId = currentSceneId,
+            anomalyHouse = items.Any(item => item != null && item.isAnomaly),
             items = items
         };
 
-        allScenesData.scenes.Add(snapshot);
+        var validation = StageValidator.Validate(snapshot, maxAnomaliesPerScene);
+        if (!validation.IsValid)
+        {
+            string errorMessage = string.Join(" / ", validation.Errors);
+            SetSceneStatus($"検証失敗: {errorMessage}", true);
+            return false;
+        }
 
-        // JSON 書き出し
+        string warningMessage = validation.Warnings.Count > 0
+            ? $" / 警告: {string.Join(" / ", validation.Warnings)}"
+            : string.Empty;
+
         try
         {
-            var json = JsonUtility.ToJson(allScenesData, true);
+            // 書込失敗時に編集中データを壊さないよう、コピーへUpsertして成功後に採用する。
+            var workingCopy = JsonUtility.FromJson<SceneDataFile>(JsonUtility.ToJson(allScenesData));
+            workingCopy ??= new SceneDataFile();
+            workingCopy.Upsert(snapshot);
+
+            var json = JsonUtility.ToJson(workingCopy, true);
             File.WriteAllText(SavePath, json);
+            allScenesData = workingCopy;
+            hasUnsavedChanges = false;
+            unresolvedItems.Clear();
+            unresolvedItems.AddRange(items
+                .Where(item => item != null && PrefabResolver.Load(item.prefabId) == null)
+                .Select(item => item.Clone()));
+            RefreshSceneDropdown(currentSceneId, loadSelection: false);
+            SetSceneStatus($"Scene {currentSceneId} を上書き保存しました{warningMessage}", validation.Warnings.Count > 0);
             Debug.Log($"保存完了: {SavePath}");
+            return true;
         }
         catch (Exception e)
         {
             Debug.LogError($"保存失敗: {e.Message}");
+            SetSceneStatus($"保存失敗: {e.Message}", true);
+            return false;
         }
     }
 

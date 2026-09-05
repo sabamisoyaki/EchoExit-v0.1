@@ -35,9 +35,18 @@ public class GameManager : MonoBehaviour
     public GoalMode goalMode = GoalMode.ShowGoalOnly;
     public string nextSceneName;   // GoalMode=LoadScene 用
     public VideoClip goalMovie;    // GoalMode=PlayMovie 用
-    public int goalThreshold = 8; // 連続正解数
+    public int goalThreshold = 6; // 連続正解数
     public TMP_Text correctCountText; // ← UI 参照を追加
-    public float anomalySpawnChance = 0.5f; // 各ラウンドで異変を出す確率
+    [Range(0f, 1f)] public float anomalySpawnChance = 0.666f; // 各ラウンドで異変を出す確率
+
+    [Header("MVPラウンド設定")]
+    [SerializeField, Min(1)] private int maxAnomaliesPerRound = 3;
+    [SerializeField, Min(10f)] private float roundTimeLimitSeconds = 180f;
+    [SerializeField] private string gameOverSceneName = "endTitle";
+
+    [Header("正誤フィードバック")]
+    [SerializeField] private RoundFeedbackPresenter roundFeedbackPresenter;
+    [SerializeField] private Behaviour playerMovementBehaviour;
 
 
 
@@ -70,6 +79,11 @@ public class GameManager : MonoBehaviour
     private bool goalShown = false;
     private bool goalTransitionStarted = false;
     private bool isLoaded = false;
+    private bool roundEnding = false;
+    private float roundTimeRemaining;
+    private Transform playerTransform;
+
+    public bool IsRoundActive => isLoaded && !inputLocked && !goalShown && !roundEnding;
 
     private int currentSceneId;
     private static int? pendingSceneId = null; // ★ 追加：次ラウンド用のIDを持ち回り
@@ -77,21 +91,9 @@ public class GameManager : MonoBehaviour
     private bool warnedMissingAnomalyTag = false;
 
 
-    // ==========================
-    // DTO（新スキーマ）
-    // ==========================
-    [System.Serializable] public class SceneFileDto { public SceneBlock[] scenes; }
-    [System.Serializable] public class SceneBlock { public int sceneId; public bool anomalyHouse; public ItemDto[] items; }
-    [System.Serializable] public class ItemDto { public string prefabId; public Vec3 position; public Vec3 rotation; public bool isAnomaly; }
-    [System.Serializable] public class Vec3 { public float x, y, z; public Vector3 ToVector3() => new(x, y, z); public Quaternion ToQuaternion() => Quaternion.Euler(x, y, z); }
-
-    // 旧形式互換（不要なら削除可）
-    [System.Serializable] public class AnomalyData { public string prefabName; public Vec3 position; public Vec3 rotation; }
-    [System.Serializable] public class AnomalyListWrapper { public AnomalyData[] list; }
-
     // キャッシュ
-    private SceneFileDto cachedFile;                      // JSON全体
-    private Dictionary<int, List<SceneBlock>> idToBlocks; // sceneId→blocks
+    private SceneDataFile cachedFile;                          // JSON全体
+    private Dictionary<int, List<SceneDataEntry>> idToBlocks; // sceneId→blocks
 
     // ==========================
     // Lifecycle
@@ -103,6 +105,7 @@ public class GameManager : MonoBehaviour
         if (!pendingSceneId.HasValue && !pendingSpawnAnomaly.HasValue)
         {
             correctCount = 0;
+            GameSessionState.Reset();
         }
 
         if (!worldRoot)
@@ -123,6 +126,37 @@ public class GameManager : MonoBehaviour
         }
 
         abnormalityDetector.SetScanRoot(worldRoot);
+
+        if (roundFeedbackPresenter == null)
+        {
+            roundFeedbackPresenter = GetComponent<RoundFeedbackPresenter>();
+            if (roundFeedbackPresenter == null)
+            {
+                roundFeedbackPresenter = gameObject.AddComponent<RoundFeedbackPresenter>();
+            }
+        }
+
+        if (playerMovementBehaviour == null)
+        {
+            playerMovementBehaviour = FindFirstObjectByType<PlayerMovement>();
+        }
+
+        var playerObject = GameObject.FindGameObjectWithTag("Player");
+        if (playerObject != null)
+        {
+            playerTransform = playerObject.transform;
+            var firstPersonController = playerObject.GetComponent<MvpFirstPersonController>();
+            if (firstPersonController == null)
+            {
+                firstPersonController = playerObject.AddComponent<MvpFirstPersonController>();
+            }
+            playerMovementBehaviour = firstPersonController;
+
+            if (playerObject.GetComponent<PlayerInteractionController>() == null)
+            {
+                playerObject.AddComponent<PlayerInteractionController>();
+            }
+        }
 
         // JSONは必要なら読む
         if (cachedFile == null) LoadSceneDataOnce();
@@ -156,8 +190,18 @@ public class GameManager : MonoBehaviour
             }
             else if (sceneIdSource == SceneIdSource.RandomFromJson)
             {
-                currentSceneId = PickSceneIdByAnomaly(spawnAnomalyThisRound, -1);
-                LogVerbose($"🎲 Using RANDOM-FROM-JSON sceneId: {currentSceneId}");
+                var selection = PickSceneByAnomaly(spawnAnomalyThisRound, -1);
+                if (selection.IsValid)
+                {
+                    currentSceneId = selection.SceneId;
+                    spawnAnomalyThisRound = selection.HasAnomaly;
+                    LogVerbose($"🎲 Using RANDOM-FROM-JSON sceneId: {currentSceneId}");
+                }
+                else
+                {
+                    currentSceneId = SceneManager.GetActiveScene().buildIndex;
+                    spawnAnomalyThisRound = false;
+                }
             }
             else
             {
@@ -168,9 +212,13 @@ public class GameManager : MonoBehaviour
                 // JSON に該当ブロックが無ければ抽選にフォールバックしてラウンドを成立させる。
                 if (idToBlocks != null && idToBlocks.Count > 0 && !idToBlocks.ContainsKey(currentSceneId))
                 {
-                    int fallbackId = PickSceneIdByAnomaly(spawnAnomalyThisRound, -1);
-                    Debug.LogWarning($"⚠ buildIndex={currentSceneId} は JSON に存在しないため sceneId={fallbackId} にフォールバックします");
-                    currentSceneId = fallbackId;
+                    var selection = PickSceneByAnomaly(spawnAnomalyThisRound, -1);
+                    if (selection.IsValid)
+                    {
+                        Debug.LogWarning($"⚠ buildIndex={currentSceneId} は JSON に存在しないため sceneId={selection.SceneId} にフォールバックします");
+                        currentSceneId = selection.SceneId;
+                        spawnAnomalyThisRound = selection.HasAnomaly;
+                    }
                 }
             }
         }
@@ -182,6 +230,18 @@ public class GameManager : MonoBehaviour
         StartCoroutine(Boot());
         UpdateCorrectCountUI();
     }
+
+    private void Update()
+    {
+        if (!IsRoundActive || roundTimeLimitSeconds <= 0f) return;
+
+        roundTimeRemaining = Mathf.Max(0f, roundTimeRemaining - Time.deltaTime);
+        roundFeedbackPresenter?.SetRoundTimer(roundTimeRemaining);
+        if (roundTimeRemaining <= 0f)
+        {
+            StartCoroutine(EndRun(GameEndingKind.TimeExpired, "時間切れ", "制限時間を超えた"));
+        }
+    }
     private bool spawnAnomalyThisRound = true;           // このラウンドで異変を出すか
     private static bool? pendingSpawnAnomaly = null;     // 次ラウンド用（リロード持ち回り）
 
@@ -189,13 +249,15 @@ public class GameManager : MonoBehaviour
 
     private IEnumerator Boot()
     {
-        inputLocked = true; isLoaded = false; goalShown = false; goalTransitionStarted = false;
+        inputLocked = true; isLoaded = false; goalShown = false; goalTransitionStarted = false; roundEnding = false;
 
         if (cachedFile == null) LoadSceneDataOnce();
 
         BuildWorldForSceneId(currentSceneId);
         SetupEnvironment(currentSceneId);
 
+        roundTimeRemaining = roundTimeLimitSeconds;
+        roundFeedbackPresenter?.SetRoundTimer(roundTimeRemaining);
         isLoaded = true; inputLocked = false;
         yield break;
     }
@@ -221,7 +283,7 @@ public class GameManager : MonoBehaviour
         if (!File.Exists(SavePath))
         {
             Debug.LogError($"❌ データ未検出: {SavePath}");
-            cachedFile = new SceneFileDto { scenes = new SceneBlock[0] };
+            cachedFile = new SceneDataFile();
             idToBlocks = new();
             return;
         }
@@ -234,26 +296,30 @@ public class GameManager : MonoBehaviour
             var t = raw.Trim();
             if (t.StartsWith("{") && t.Contains("\"scenes\""))
             {
-                cachedFile = JsonUtility.FromJson<SceneFileDto>(t);
+                cachedFile = JsonUtility.FromJson<SceneDataFile>(t);
             }
             else
             {
                 Debug.LogWarning("⚠ 未対応のJSON形式 → 空データ扱い");
-                cachedFile = new SceneFileDto { scenes = new SceneBlock[0] };
+                cachedFile = new SceneDataFile();
             }
         }
         catch (System.Exception e)
         {
             Debug.LogError("JSONパース失敗: " + e.Message);
-            cachedFile = new SceneFileDto { scenes = new SceneBlock[0] };
+            cachedFile = new SceneDataFile();
         }
 
-        idToBlocks = new Dictionary<int, List<SceneBlock>>();
-        foreach (var b in cachedFile.scenes ?? System.Array.Empty<SceneBlock>())
+        cachedFile ??= new SceneDataFile();
+        cachedFile.Normalize();
+
+        idToBlocks = new Dictionary<int, List<SceneDataEntry>>();
+        foreach (var b in cachedFile.scenes)
         {
+            if (b == null) continue;
             if (!idToBlocks.TryGetValue(b.sceneId, out var list))
             {
-                list = new List<SceneBlock>();
+                list = new List<SceneDataEntry>();
                 idToBlocks[b.sceneId] = list;
             }
             list.Add(b);
@@ -274,7 +340,7 @@ public class GameManager : MonoBehaviour
 
             foreach (var b in kv.Value)
             {
-                foreach (var it in b.items ?? System.Array.Empty<ItemDto>())
+                foreach (var it in b.items ?? new List<SceneItemData>())
                 {
                     if (it != null && it.isAnomaly)
                     {
@@ -297,36 +363,33 @@ public class GameManager : MonoBehaviour
 
     }
 
-    private int PickSceneIdByAnomaly(bool wantAnomaly, int excludeSceneId)
+    private RoundSelection PickSceneByAnomaly(bool wantAnomaly, int excludeSceneId)
     {
-        var pool = wantAnomaly ? anomalySceneIds : normalSceneIds;
+        var selection = RoundSelectionUtility.Pick(
+            anomalySceneIds,
+            normalSceneIds,
+            wantAnomaly,
+            excludeSceneId,
+            count => Random.Range(0, count));
 
-        // excludeを外す（候補が複数ある時だけ）
-        List<int> candidates = pool;
-        if (excludeSceneId >= 0 && pool.Count > 1 && pool.Contains(excludeSceneId))
+        if (!selection.IsValid)
         {
-            candidates = pool.Where(id => id != excludeSceneId).ToList();
+            Debug.LogError("🚨 JSONに sceneId 候補が存在しません（両方0）");
+            return selection;
         }
 
-        if (candidates.Count > 0)
+        if (selection.UsedFallback)
         {
-            int pick = candidates[Random.Range(0, candidates.Count)];
-            LogVerbose($"🎯 PickSceneIdByAnomaly wantAnomaly={wantAnomaly} -> {pick}");
-            return pick;
+            Debug.LogWarning(
+                $"⚠ 候補不足：wantAnomaly={wantAnomaly} の候補が0。" +
+                $"逆側から sceneId={selection.SceneId} (hasAnomaly={selection.HasAnomaly}) を使用");
+        }
+        else
+        {
+            LogVerbose($"🎯 PickSceneByAnomaly wantAnomaly={wantAnomaly} -> {selection.SceneId}");
         }
 
-        // フォールバック：逆側に候補があるなら逆側から取る
-        var alt = wantAnomaly ? normalSceneIds : anomalySceneIds;
-        if (alt.Count > 0)
-        {
-            int pick = alt[Random.Range(0, alt.Count)];
-            Debug.LogWarning($"⚠ 候補不足：wantAnomaly={wantAnomaly} の候補が0。逆側から {pick} を使用");
-            return pick;
-        }
-
-        // 最終フォールバック：何もない
-        Debug.LogError("🚨 JSONに sceneId 候補が存在しません（両方0）");
-        return SceneManager.GetActiveScene().buildIndex;
+        return selection;
     }
 
 
@@ -348,6 +411,7 @@ public class GameManager : MonoBehaviour
 
         bool matchedAny = false;
         bool spawnedAnyAnomaly = false;
+        int spawnedAnomalyCount = 0;
         int placed = 0;
 
         if (idToBlocks != null && idToBlocks.TryGetValue(sceneId, out var blocks))
@@ -358,7 +422,7 @@ public class GameManager : MonoBehaviour
 
             foreach (var b in blocks)
             {
-                foreach (var it in b.items ?? System.Array.Empty<ItemDto>())
+                foreach (var it in b.items ?? new List<SceneItemData>())
                 {
                     if (it == null) continue;
 
@@ -372,6 +436,13 @@ public class GameManager : MonoBehaviour
                         continue;
                     }
 
+                    if (it.isAnomaly && spawnedAnomalyCount >= maxAnomaliesPerRound)
+                    {
+                        Debug.LogWarning(
+                            $"sceneId={sceneId}: 異変上限{maxAnomaliesPerRound}個を超えたため '{it.prefabId}' をスキップします");
+                        continue;
+                    }
+
                     if (!SpawnItem(it))
                     {
                         continue;
@@ -381,7 +452,11 @@ public class GameManager : MonoBehaviour
 
                     placed++;
 
-                    if (it.isAnomaly) spawnedAnyAnomaly = true;
+                    if (it.isAnomaly)
+                    {
+                        spawnedAnyAnomaly = true;
+                        spawnedAnomalyCount++;
+                    }
                 }
             }
         }
@@ -415,11 +490,13 @@ public class GameManager : MonoBehaviour
         if (forwardTriggerPrefab && forwardTriggerPoint)
         {
             var t = Instantiate(forwardTriggerPrefab, forwardTriggerPoint.position, forwardTriggerPoint.rotation, worldRoot);
+            ConfigureDecisionDoor(t);
             spawned.Add(t);
         }
         if (backTriggerPrefab && backTriggerPoint)
         {
             var t = Instantiate(backTriggerPrefab, backTriggerPoint.position, backTriggerPoint.rotation, worldRoot);
+            ConfigureDecisionDoor(t);
             spawned.Add(t);
         }
 
@@ -471,28 +548,109 @@ public class GameManager : MonoBehaviour
         }
 
         UpdateCorrectCountUI();
+        StartCoroutine(ResolveChoiceAfterFeedback(isCorrect));
+    }
 
-        // ここでまずゴール判定。到達時は専用シーンへ遷移（この時点では再ロードしない）
+    public void NotifyAnomalyRecognized(AnomalyRitualController ritual)
+    {
+        if (ritual == null || roundEnding) return;
+
+        string message = ritual.IsAggressive
+            ? $"{ritual.DisplayName}を認識した\n出口へ逃げろ"
+            : $"{ritual.DisplayName}を認識した";
+        StartCoroutine(roundFeedbackPresenter != null
+            ? roundFeedbackPresenter.ShowAnnouncement(message, ritual.IsAggressive)
+            : EmptyRoutine());
+    }
+
+    public void PlayerCaught(string anomalyName)
+    {
+        if (roundEnding) return;
+        StartCoroutine(EndRun(
+            GameEndingKind.Caught,
+            "異変に捕まった",
+            string.IsNullOrWhiteSpace(anomalyName) ? "正体不明の異変" : anomalyName));
+    }
+
+    private IEnumerator EndRun(GameEndingKind ending, string message, string detail)
+    {
+        if (roundEnding) yield break;
+
+        roundEnding = true;
+        inputLocked = true;
+        correctCount = 0;
+        pendingSceneId = null;
+        pendingSpawnAnomaly = null;
+        UpdateCorrectCountUI();
+        GameSessionState.SetEnding(ending, detail);
+
+        if (playerMovementBehaviour != null)
+        {
+            playerMovementBehaviour.enabled = false;
+        }
+
+        if (roundFeedbackPresenter != null)
+        {
+            yield return roundFeedbackPresenter.ShowAnnouncement(message, isDanger: true, duration: 1.5f);
+        }
+
+        SafeLoadSceneByName(currentSceneId, gameOverSceneName);
+    }
+
+    private static IEnumerator EmptyRoutine()
+    {
+        yield break;
+    }
+
+    private IEnumerator ResolveChoiceAfterFeedback(bool isCorrect)
+    {
+        bool restoreMovement = playerMovementBehaviour != null && playerMovementBehaviour.enabled;
+        if (restoreMovement)
+        {
+            playerMovementBehaviour.enabled = false;
+        }
+
+        if (roundFeedbackPresenter != null)
+        {
+            yield return roundFeedbackPresenter.ShowResult(isCorrect, correctCount, goalThreshold);
+        }
+        else
+        {
+            Debug.LogWarning("GameManager: RoundFeedbackPresenter が未設定のため表示をスキップします。");
+        }
+
+        if (restoreMovement && playerMovementBehaviour != null)
+        {
+            playerMovementBehaviour.enabled = true;
+        }
+
+        // 最終正解のフィードバックを見せた後でゴール処理へ進む。
         if (correctCount >= goalThreshold)
         {
             HandleGoalReached();
-            return;
+            yield break;
         }
 
-        // 次ラウンドの異変有無と一致する sceneId を選び、リロード先へ持ち回る。
+        // 次ラウンドの実際の分類と一致する sceneId / 異変フラグを持ち回る。
         bool wantAnomalyNext = (Random.value < anomalySpawnChance);
-        int nextId = PickSceneIdByAnomaly(wantAnomalyNext, currentSceneId);
-        pendingSpawnAnomaly = wantAnomalyNext;
-        LogVerbose(wantAnomalyNext
+        var selection = PickSceneByAnomaly(wantAnomalyNext, currentSceneId);
+        if (!selection.IsValid)
+        {
+            bool currentHasAnomaly = anomalySceneIds.Contains(currentSceneId);
+            selection = new RoundSelection(currentSceneId, currentHasAnomaly, usedFallback: true, isValid: true);
+            Debug.LogWarning($"⚠ 次ラウンド候補がないため現在の sceneId={currentSceneId} を再利用します");
+        }
+
+        pendingSpawnAnomaly = selection.HasAnomaly;
+        LogVerbose(selection.HasAnomaly
             ? "🧪 Next round: anomaly ON"
             : "🧼 Next round: anomaly OFF");
 
-        pendingSceneId = nextId;
+        pendingSceneId = selection.SceneId;
 
         var curName = SceneManager.GetActiveScene().name;
-        LogVerbose($"➡ 次ラウンド sceneId={nextId} spawnAnomaly={pendingSpawnAnomaly} → \"{curName}\" を再ロード");
+        LogVerbose($"➡ 次ラウンド sceneId={selection.SceneId} spawnAnomaly={pendingSpawnAnomaly} → \"{curName}\" を再ロード");
         SceneManager.LoadScene(curName, LoadSceneMode.Single);
-
     }
 
     private void SafeLoadSceneByName(int sceneId, string sceneName)
@@ -568,6 +726,7 @@ public class GameManager : MonoBehaviour
         if (goalPrefab == null) return false;
 
         var goal = Instantiate(goalPrefab, new Vector3(0, 0.5f, 6), Quaternion.identity, worldRoot);
+        ConfigureDecisionDoor(goal);
         spawned.Add(goal);
         goalShown = true;
         inputLocked = true;
@@ -624,6 +783,7 @@ public class GameManager : MonoBehaviour
         correctCount = 0;
         pendingSceneId = null;
         pendingSpawnAnomaly = null;
+        GameSessionState.SetEnding(GameEndingKind.Escaped, "6回の判断に成功した");
         UpdateCorrectCountUI();
         LogVerbose($"🎉 ゴール完了：{sceneName}シーンへ遷移");
         SafeLoadSceneByName(currentSceneId, sceneName);
@@ -635,32 +795,30 @@ public class GameManager : MonoBehaviour
     // ==========================
     // ユーティリティ
     // ==========================
-    private bool SpawnItem(ItemDto item)
+    private bool SpawnItem(SceneItemData item)
     {
         if (item == null || string.IsNullOrEmpty(item.prefabId)) return false;
 
-        string path = ResolvePrefabPath(item.prefabId);
-        var prefab = Resources.Load<GameObject>(path);
-        if (!prefab) { Debug.LogWarning($"Prefab not found: {path}"); return false; }
+        if (!PrefabResolver.TryLoad(item.prefabId, out var prefab, out _))
+        {
+            Debug.LogWarning($"Prefab not found: {item.prefabId}");
+            return false;
+        }
 
-        var pos = (item.position != null) ? item.position.ToVector3() : Vector3.zero;
-        var rot = (item.rotation != null) ? item.rotation.ToQuaternion() : Quaternion.identity;
+        var pos = item.position;
+        var rot = Quaternion.Euler(item.rotation);
 
         var go = Instantiate(prefab, pos, rot, worldRoot);
         ApplyAnomalyTag(go, item.isAnomaly);
+        AnomalyRuntimeFactory.Configure(
+            go,
+            item.prefabId,
+            item.isAnomaly,
+            this,
+            playerTransform,
+            threatsEnabled: true);
         spawned.Add(go);
         return true;
-    }
-
-    private string ResolvePrefabPath(string prefabId)
-    {
-        switch (prefabId)
-        {
-            case "anomaryShirinkBox": return "Prefabs/Abnormalities/anomaryShirinkBox";
-            case "bears": return "Prefabs/Abnormalities/bears";
-            case "changeColorBox": return "Prefabs/Abnormalities/changeColorBox";
-            default: return $"Prefabs/Abnormalities/{prefabId}";
-        }
     }
 
     private void LogVerbose(string message)
@@ -671,6 +829,16 @@ public class GameManager : MonoBehaviour
     private void LogSpawn(string message)
     {
         if (spawnTraceLogs) Debug.Log(message);
+    }
+
+    private static void ConfigureDecisionDoor(GameObject door)
+    {
+        if (door == null) return;
+
+        foreach (var colliderComponent in door.GetComponentsInChildren<Collider>(true))
+        {
+            colliderComponent.isTrigger = false;
+        }
     }
 
     private void ApplyAnomalyTag(GameObject go, bool isAnomaly)
