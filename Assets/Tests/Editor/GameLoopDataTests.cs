@@ -134,6 +134,43 @@ public sealed class GameLoopDataTests
     }
 
     [Test]
+    public void RoundSelection_AnomalyOffRoundCanUseAnomalyRooms()
+    {
+        // 異変OFFのラウンドは異変なし部屋に限定してはいけない。
+        // 限定すると「部屋の見た目＝異変の有無」が固定され、間取りの暗記でクリアできてしまう。
+        // normal=[3] / anomaly=[1,2] で index=1 を選ぶと、結合プール [3,1,2] の 1 番目＝1（異変あり部屋）。
+        var result = RoundSelectionUtility.Pick(
+            new[] { 1, 2 },
+            new[] { 3 },
+            wantAnomaly: false,
+            excludeSceneId: -1,
+            pickIndex: _ => 1);
+
+        Assert.That(result.IsValid, Is.True);
+        Assert.That(result.SceneId, Is.EqualTo(1));
+        Assert.That(result.HasAnomaly, Is.False, "異変OFFのラウンドとして選ばれた以上、異変は出さない");
+        Assert.That(result.UsedFallback, Is.False);
+    }
+
+    [Test]
+    public void RoundSelection_AnomalyOnRoundOnlyUsesRoomsThatHaveAnomalies()
+    {
+        var result = RoundSelectionUtility.Pick(
+            new[] { 1, 2 },
+            new[] { 3 },
+            wantAnomaly: true,
+            excludeSceneId: -1,
+            pickIndex: count =>
+            {
+                Assert.That(count, Is.EqualTo(2), "異変ONの候補は異変あり部屋のみ");
+                return 0;
+            });
+
+        Assert.That(result.SceneId, Is.EqualTo(1));
+        Assert.That(result.HasAnomaly, Is.True);
+    }
+
+    [Test]
     public void RoundSelection_ReturnsInvalidWhenNoCandidatesExist()
     {
         var result = RoundSelectionUtility.Pick(

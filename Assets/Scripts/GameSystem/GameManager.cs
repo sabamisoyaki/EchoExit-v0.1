@@ -127,6 +127,10 @@ public class GameManager : MonoBehaviour
 
         abnormalityDetector.SetScanRoot(worldRoot);
 
+        // SpawnItem が item.isAnomaly に応じてタグを付け直すため、
+        // プレハブ名による推測検知は誤判定にしかならない（通常配置の ChairPrefab などを拾う）。
+        abnormalityDetector.SetNameFallbackEnabled(false);
+
         if (roundFeedbackPresenter == null)
         {
             roundFeedbackPresenter = GetComponent<RoundFeedbackPresenter>();
@@ -525,6 +529,7 @@ public class GameManager : MonoBehaviour
     {
         if (inputLocked || !isLoaded) { LogVerbose("⌛ 入力不可"); return; }
         if (goalShown) { LogVerbose("🏁 ゴール状態"); return; }
+        if (roundEnding) { LogVerbose("💀 ラウンド終了処理中"); return; }
 
         inputLocked = true; // ← 早めにロックして連打による多重呼び出しを防止
 
@@ -619,6 +624,14 @@ public class GameManager : MonoBehaviour
             Debug.LogWarning("GameManager: RoundFeedbackPresenter が未設定のため表示をスキップします。");
         }
 
+        // 演出中に捕獲／時間切れが発生していた場合、EndRun が遷移を担当する。
+        // ここで続行するとゲームオーバー遷移をラウンド再ロードで上書きしてしまう。
+        if (roundEnding)
+        {
+            LogVerbose("💀 ラウンド終了処理が進行中のため次ラウンド遷移を中止");
+            yield break;
+        }
+
         if (restoreMovement && playerMovementBehaviour != null)
         {
             playerMovementBehaviour.enabled = true;
@@ -636,7 +649,8 @@ public class GameManager : MonoBehaviour
         var selection = PickSceneByAnomaly(wantAnomalyNext, currentSceneId);
         if (!selection.IsValid)
         {
-            bool currentHasAnomaly = anomalySceneIds.Contains(currentSceneId);
+            // 異変ONにできるのは、その部屋が異変アイテムを持っている場合だけ。
+            bool currentHasAnomaly = wantAnomalyNext && anomalySceneIds.Contains(currentSceneId);
             selection = new RoundSelection(currentSceneId, currentHasAnomaly, usedFallback: true, isValid: true);
             Debug.LogWarning($"⚠ 次ラウンド候補がないため現在の sceneId={currentSceneId} を再利用します");
         }

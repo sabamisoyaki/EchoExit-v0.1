@@ -10,7 +10,10 @@ public class AbnormalityPresenceDetector : MonoBehaviour
     [SerializeField] private string resourcesFolder = "Prefabs/Abnormalities";
     [SerializeField] private Transform scanRoot;
     [SerializeField] private bool includeInactive = true;
-    [SerializeField] private bool useMarkerOnly = false;
+    // 名前フォールバックは「プレハブ名が Abnormalities フォルダにあるか」でしか判定できず、
+    // 同じプレハブを通常アイテムとして配置したケース（ChairPrefab / DollPrefab など）を
+    // 異変として誤検知する。既定ではタグとマーカーのみを信頼する。
+    [SerializeField] private bool useMarkerOnly = true;
 
     [Header("Auto Scan")]
     [SerializeField] private bool scanOnStart = true;
@@ -27,6 +30,15 @@ public class AbnormalityPresenceDetector : MonoBehaviour
     public void SetScanRoot(Transform root)
     {
         scanRoot = root;
+    }
+
+    /// <summary>
+    /// プレハブ名による推測検知を使うかどうか。
+    /// 生成側がインスタンスへ明示的にタグ／マーカーを付与している場合は false にする。
+    /// </summary>
+    public void SetNameFallbackEnabled(bool enabled)
+    {
+        useMarkerOnly = !enabled;
     }
 
     private void Awake()

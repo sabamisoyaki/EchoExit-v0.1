@@ -31,7 +31,14 @@ public static class RoundSelectionUtility
     {
         if (pickIndex == null) throw new ArgumentNullException(nameof(pickIndex));
 
-        var desiredPool = wantAnomaly ? anomalySceneIds : normalSceneIds;
+        // 異変ONのラウンドは、異変アイテムを持つ部屋からしか作れない。
+        // 異変OFFのラウンドはどの部屋でも作れる（異変あり部屋は
+        // BuildWorldForSceneId が isAnomaly アイテムを飛ばして構築するため）。
+        // 異変なし部屋だけを OFF に割り当てると「部屋の見た目＝異変の有無」が
+        // 1対1で固定され、異変を観察せず間取りの暗記だけでクリアできてしまう。
+        var desiredPool = wantAnomaly
+            ? anomalySceneIds
+            : Combine(normalSceneIds, anomalySceneIds);
         var desiredCandidates = BuildCandidates(desiredPool, excludeSceneId);
         if (desiredCandidates.Count > 0)
         {
@@ -54,6 +61,14 @@ public static class RoundSelectionUtility
         }
 
         return RoundSelection.Invalid;
+    }
+
+    private static List<int> Combine(IReadOnlyList<int> first, IReadOnlyList<int> second)
+    {
+        var combined = new List<int>();
+        if (first != null) combined.AddRange(first);
+        if (second != null) combined.AddRange(second);
+        return combined;
     }
 
     private static List<int> BuildCandidates(IReadOnlyList<int> source, int excludeSceneId)
