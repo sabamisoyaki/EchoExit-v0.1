@@ -1,0 +1,77 @@
+{
+  "scenes": [
+    {
+      "sceneId": 1,
+      "anomalyHouse": false,
+      "items": [
+        { "prefabId": "ChairPrefab", "position": { "x": -1.0, "y": 0.5, "z": 2.0 }, "rotation": { "x": 0, "y": 20, "z": 0 }, "isAnomaly": false },
+        { "prefabId": "DollPrefab", "position": { "x": 1.2, "y": 0.5, "z": 3.0 }, "rotation": { "x": 0, "y": 270, "z": 0 }, "isAnomaly": false }
+      ]
+    },
+    {
+      "sceneId": 2,
+      "anomalyHouse": true,
+      "items": [
+        { "prefabId": "ChairPrefab", "position": { "x": -1.0, "y": 0.5, "z": 2.0 }, "rotation": { "x": 0, "y": 20, "z": 0 }, "isAnomaly": false },
+        { "prefabId": "bears", "position": { "x": 1.2, "y": 0.5, "z": 3.0 }, "rotation": { "x": 0, "y": 180, "z": 0 }, "isAnomaly": true }
+      ]
+    },
+    {
+      "sceneId": 3,
+      "anomalyHouse": false,
+      "items": [
+        { "prefabId": "DollPrefab", "position": { "x": 0.0, "y": 0.5, "z": 3.5 }, "rotation": { "x": 0, "y": 180, "z": 0 }, "isAnomaly": false },
+        { "prefabId": "ChairPrefab", "position": { "x": 1.5, "y": 0.5, "z": 1.5 }, "rotation": { "x": 0, "y": 340, "z": 0 }, "isAnomaly": false }
+      ]
+    },
+    {
+      "sceneId": 4,
+      "anomalyHouse": true,
+      "items": [
+        { "prefabId": "DollPrefab", "position": { "x": 0.0, "y": 0.5, "z": 3.5 }, "rotation": { "x": 0, "y": 180, "z": 0 }, "isAnomaly": false },
+        { "prefabId": "changeColorBox", "position": { "x": -1.5, "y": 0.5, "z": 2.5 }, "rotation": { "x": 0, "y": 0, "z": 0 }, "isAnomaly": true }
+      ]
+    },
+    {
+      "sceneId": 5,
+      "anomalyHouse": true,
+      "items": [
+        { "prefabId": "ChairPrefab", "position": { "x": -1.4, "y": 0.5, "z": 1.8 }, "rotation": { "x": 0, "y": 15, "z": 0 }, "isAnomaly": false },
+        { "prefabId": "anomaryShirinkBox", "position": { "x": 0.0, "y": 0.5, "z": 3.0 }, "rotation": { "x": 0, "y": 0, "z": 0 }, "isAnomaly": true },
+        { "prefabId": "DollPrefab", "position": { "x": 1.5, "y": 0.5, "z": 2.2 }, "rotation": { "x": 0, "y": 210, "z": 0 }, "isAnomaly": true }
+      ]
+    },
+    {
+      "sceneId": 6,
+      "anomalyHouse": false,
+      "items": [
+        { "prefabId": "ChairPrefab", "position": { "x": -1.3, "y": 0.5, "z": 2.4 }, "rotation": { "x": 0, "y": 25, "z": 0 }, "isAnomaly": false },
+        { "prefabId": "DollPrefab", "position": { "x": 1.1, "y": 0.5, "z": 3.2 }, "rotation": { "x": 0, "y": 250, "z": 0 }, "isAnomaly": false }
+      ]
+    },
+    {
+      "sceneId": 7,
+      "anomalyHouse": true,
+      "items": [
+        { "prefabId": "ChairPrefab", "position": { "x": 0.0, "y": 0.5, "z": 2.8 }, "rotation": { "x": 0, "y": 180, "z": 0 }, "isAnomaly": true },
+        { "prefabId": "DollPrefab", "position": { "x": -1.5, "y": 0.5, "z": 3.6 }, "rotation": { "x": 0, "y": 210, "z": 0 }, "isAnomaly": false }
+      ]
+    },
+    {
+      "sceneId": 8,
+      "anomalyHouse": true,
+      "items": [
+        { "prefabId": "wall", "position": { "x": 1.8, "y": 1.0, "z": 3.4 }, "rotation": { "x": 0, "y": 90, "z": 0 }, "isAnomaly": true },
+        { "prefabId": "ChairPrefab", "position": { "x": -1.2, "y": 0.5, "z": 2.3 }, "rotation": { "x": 0, "y": 15, "z": 0 }, "isAnomaly": false }
+      ]
+    },
+    {
+      "sceneId": 9,
+      "anomalyHouse": true,
+      "items": [
+        { "prefabId": "footstepEcho", "position": { "x": 0.0, "y": 0.03, "z": 3.0 }, "rotation": { "x": 0, "y": 0, "z": 0 }, "isAnomaly": true },
+        { "prefabId": "ChairPrefab", "position": { "x": 1.4, "y": 0.5, "z": 2.4 }, "rotation": { "x": 0, "y": 335, "z": 0 }, "isAnomaly": false }
+      ]
+    }
+  ]
+}

@@ -24,6 +24,11 @@ public class AbnormalityPresenceDetector : MonoBehaviour
 
     public IReadOnlyList<GameObject> DetectedObjects => detectedObjects;
 
+    public void SetScanRoot(Transform root)
+    {
+        scanRoot = root;
+    }
+
     private void Awake()
     {
         CacheAbnormalityPrefabNames();
