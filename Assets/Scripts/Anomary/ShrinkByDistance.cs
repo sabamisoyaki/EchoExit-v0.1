@@ -5,17 +5,18 @@ public class ShrinkByDistance : MonoBehaviour
 {
     public Transform player;
 
-    [Header("距離設定")]
+    [Header("Distance Settings")]
     public float vanishDistance = 2.5f;
     public float reappearDistance = 5.0f;
 
-    [Header("スケール設定")]
+    [Header("Scale Settings")]
     public float minScale = 0.1f;
     public float maxScale = 1.0f;
     public Vector2 shrinkSpeedRange = new Vector2(0.01f, 0.03f);
     public float growSpeed = 0.02f;
 
     private Vector3 originalScale;
+    private float scaleRatio = 1f;
     private bool isHidden = false;
     private Renderer[] renderers;
     private Collider[] colliders;
@@ -31,14 +32,13 @@ public class ShrinkByDistance : MonoBehaviour
             }
             else
             {
-                Debug.LogError("Playerが見つかりません。タグを確認してください。");
+                Debug.LogError("Player object was not found. Check the Player tag.");
             }
         }
 
         originalScale = transform.localScale;
         renderers = GetComponentsInChildren<Renderer>();
         colliders = GetComponentsInChildren<Collider>();
-
     }
 
     void Update()
@@ -60,25 +60,27 @@ public class ShrinkByDistance : MonoBehaviour
     void Shrink()
     {
         float shrinkAmount = Random.Range(shrinkSpeedRange.x, shrinkSpeedRange.y);
-        transform.localScale -= Vector3.one * shrinkAmount;
+        scaleRatio = Mathf.Max(minScale, scaleRatio - shrinkAmount);
+        transform.localScale = originalScale * scaleRatio;
 
-        if (transform.localScale.x <= minScale)
+        if (scaleRatio <= minScale)
         {
-            transform.localScale = Vector3.one * minScale;
             isHidden = true;
-            SetVisible(false);   // 可視状態をfalseに
+            SetVisible(false);
             SetCollidable(false);
         }
     }
 
     void Reappear()
     {
-        SetVisible(true); // 再び可視化
+        SetVisible(true);
         SetCollidable(true);
-        transform.localScale += Vector3.one * growSpeed;
+        scaleRatio = Mathf.Min(maxScale, scaleRatio + growSpeed);
+        transform.localScale = originalScale * scaleRatio;
 
-        if (transform.localScale.x >= maxScale)
+        if (scaleRatio >= maxScale)
         {
+            scaleRatio = 1f;
             transform.localScale = originalScale;
             isHidden = false;
         }

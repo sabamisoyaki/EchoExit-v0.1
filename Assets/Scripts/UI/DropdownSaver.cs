@@ -1,5 +1,6 @@
-﻿using UnityEngine;
+using UnityEngine;
 using TMPro;
+using System.IO;
 
 public class TMP_DropdownSaver : MonoBehaviour
 {
@@ -23,7 +24,7 @@ public class TMP_DropdownSaver : MonoBehaviour
             dropdown.value = savedIndex;
 
             string suffix = dropdown.options[savedIndex].text;
-            sharedString.value = $"anomaly_{suffix}.json";
+            sharedString.value = BuildFileName(suffix);
             Debug.Log($"[起動時] ファイル名: {sharedString.value}");
         }
 
@@ -34,7 +35,7 @@ public class TMP_DropdownSaver : MonoBehaviour
     private void OnDropdownChanged(int index)
     {
         string suffix = dropdown.options[index].text;
-        string fileName = $"anomaly_{suffix}.json";
+        string fileName = BuildFileName(suffix);
 
         sharedString.value = fileName;
 
@@ -42,6 +43,17 @@ public class TMP_DropdownSaver : MonoBehaviour
         PlayerPrefs.Save();
 
         Debug.Log($"[変更] 選択肢: {suffix} → ファイル名: {fileName}");
+    }
+
+    private static string BuildFileName(string suffix)
+    {
+        string safeSuffix = Path.GetFileName(suffix ?? string.Empty);
+        foreach (char invalidChar in Path.GetInvalidFileNameChars())
+        {
+            safeSuffix = safeSuffix.Replace(invalidChar, '_');
+        }
+
+        return $"anomaly_{safeSuffix}.json";
     }
 
     private void OnDestroy()

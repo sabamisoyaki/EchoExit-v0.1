@@ -1,5 +1,4 @@
 using UnityEngine;
-using System.Collections.Generic;
 using Extensions;
 
 public class ObjectLoader : MonoBehaviour
@@ -17,37 +16,67 @@ public class ObjectLoader : MonoBehaviour
         public MapObject[] objects;
     }
 
+    [TextArea(3, 10)]
+    [SerializeField] private string jsonOverride;
+    [SerializeField] private bool loadOnStart = false;
+    [SerializeField] private string prefabResourcesFolder = "Prefabs";
+
     void Start()
     {
-        // ダミーJSONデータ
-        string json = @"
+        if (!loadOnStart) return;
+
+        LoadFromJson(jsonOverride);
+    }
+
+    public void LoadFromJson(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
         {
-            ""objects"": [
-                { ""type"": ""trap"", ""position"": [1, 0, 2] },
-                { ""type"": ""wall"", ""position"": [3, 0, 1] },
-                { ""type"": ""goal"", ""position"": [5, 0, 0] }
-            ]
-        }";
+            Debug.LogWarning("[ObjectLoader] JSON is empty.");
+            return;
+        }
 
-        // JSONデコード
         MapObjectList mapData = JsonUtility.FromJson<MapObjectList>(json);
+        if (mapData?.objects == null)
+        {
+            Debug.LogWarning("[ObjectLoader] JSON does not contain an objects array.");
+            return;
+        }
 
-        // 配置
         foreach (MapObject obj in mapData.objects)
         {
-            Vector3 pos = new Vector3(obj.position[0], obj.position[1], obj.position[2]);
-            string prefabName = obj.type.FirstCharToUpper();
-            GameObject prefab = Resources.Load<GameObject>($"Prefabs/{prefabName}");
+            if (!TryGetPosition(obj, out Vector3 pos))
+            {
+                Debug.LogWarning("[ObjectLoader] Skipped object with invalid position data.");
+                continue;
+            }
+
+            string prefabName = string.IsNullOrWhiteSpace(obj.type) ? string.Empty : obj.type.FirstCharToUpper();
+            if (string.IsNullOrEmpty(prefabName))
+            {
+                Debug.LogWarning("[ObjectLoader] Skipped object with empty type.");
+                continue;
+            }
+
+            GameObject prefab = Resources.Load<GameObject>($"{prefabResourcesFolder}/{prefabName}");
             if (prefab != null)
             {
                 Instantiate(prefab, pos, Quaternion.identity);
-                Debug.Log($"[ObjectLoader] 配置完了: {prefabName} at {pos}");
+                Debug.Log($"[ObjectLoader] Placed: {prefabName} at {pos}");
             }
             else
             {
-                Debug.LogWarning($"[ObjectLoader] プレハブが見つかりません: {prefabName} at {pos}");
+                Debug.LogWarning($"[ObjectLoader] Prefab not found: {prefabName} at {pos}");
             }
         }
+    }
 
+    private static bool TryGetPosition(MapObject obj, out Vector3 pos)
+    {
+        pos = Vector3.zero;
+        if (obj?.position == null || obj.position.Length < 3) return false;
+
+        pos = new Vector3(obj.position[0], obj.position[1], obj.position[2]);
+        return true;
     }
 }
