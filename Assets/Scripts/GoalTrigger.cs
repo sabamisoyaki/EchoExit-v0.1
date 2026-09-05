@@ -1,30 +1,27 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-public class GoalTrigger : MonoBehaviour
+public class GoalTrigger : MonoBehaviour, IPlayerInteractable
 {
-    [SerializeField] private GameManager gameManager;
-    [SerializeField] private string fallbackSceneName = "endTitle";
+    private bool consumed;
 
-    private void Awake()
+    public string InteractionPrompt => "666号扉を開く  [E / X]";
+    public bool CanInteract => !consumed;
+
+    public void Interact(GameObject interactor)
     {
-        if (gameManager == null)
-        {
-            gameManager = FindFirstObjectByType<GameManager>();
-        }
-    }
+        if (consumed || interactor == null || !interactor.CompareTag("Player")) return;
 
-    private void OnTriggerEnter(Collider other)
-    {
-        if (!other.CompareTag("Player")) return;
-
+        consumed = true;
         Debug.Log("Goal reached");
+        GameManager gameManager = FindFirstObjectByType<GameManager>();
         if (gameManager != null)
         {
-            gameManager.OnGoalTriggerReached();
-            return;
+            gameManager.CompleteGoal();
         }
-
-        SceneManager.LoadScene(fallbackSceneName);
+        else
+        {
+            SceneManager.LoadScene("endTitle");
+        }
     }
 }

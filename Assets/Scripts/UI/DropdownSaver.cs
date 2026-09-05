@@ -19,7 +19,14 @@ public class TMP_DropdownSaver : MonoBehaviour
 
         int savedIndex = PlayerPrefs.GetInt(PrefKey, 0);
 
-        if (savedIndex >= 0 && savedIndex < dropdown.options.Count)
+        // 選択肢が変わって保存済み index が範囲外になった場合は先頭にフォールバック。
+        // sharedString.value が前回の値のまま残らないよう、必ずここで設定する。
+        if (savedIndex < 0 || savedIndex >= dropdown.options.Count)
+        {
+            savedIndex = 0;
+        }
+
+        if (dropdown.options.Count > 0)
         {
             dropdown.value = savedIndex;
 

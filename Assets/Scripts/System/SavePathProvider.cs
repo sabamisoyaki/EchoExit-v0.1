@@ -4,6 +4,10 @@ using UnityEngine;
 public static class SavePathProvider
 {
     public const string SaveFolderName = "Saves";
+    public const string DefaultFileName = "anomalies.json";
+
+    // Resources/DefaultAnomalies.json（新形式）。初回起動時にセーブフォルダへ展開する
+    private const string DefaultDataResource = "DefaultAnomalies";
 
     public static string SaveDirectory
     {
@@ -15,7 +19,7 @@ public static class SavePathProvider
         }
     }
 
-    public static string GetSaveFilePath(string fileName, string defaultFileName = "anomalies.json")
+    public static string GetSaveFilePath(string fileName, string defaultFileName = DefaultFileName)
     {
         var resolvedName = string.IsNullOrWhiteSpace(fileName) ? defaultFileName : fileName;
         resolvedName = Path.GetFileName(resolvedName);
@@ -32,21 +36,36 @@ public static class SavePathProvider
         return Path.Combine(SaveDirectory, resolvedName);
     }
 
-    public static bool EnsureSeedFileExists(string destinationPath, string resourceName = "default_scenes")
+    /// <summary>
+    /// 対象ファイルが存在しない、または中身が空の場合、
+    /// Resources のデフォルトデータを書き込んでからパスを返す。
+    /// </summary>
+    public static string EnsureSaveFileWithDefaultData(string fileName)
     {
-        if (File.Exists(destinationPath)) return true;
+        var path = GetSaveFilePath(fileName);
 
-        var seed = Resources.Load<TextAsset>(resourceName);
-        if (seed == null)
+        try
         {
-            Debug.LogError($"Initial scene data resource was not found: {resourceName}");
-            return false;
+            bool needsDefault = !File.Exists(path) || string.IsNullOrWhiteSpace(File.ReadAllText(path));
+            if (needsDefault)
+            {
+                var defaultData = Resources.Load<TextAsset>(DefaultDataResource);
+                if (defaultData != null && !string.IsNullOrWhiteSpace(defaultData.text))
+                {
+                    File.WriteAllText(path, defaultData.text);
+                    Debug.Log($"SavePathProvider: デフォルトデータを展開しました → {path}");
+                }
+                else
+                {
+                    Debug.LogWarning($"SavePathProvider: Resources/{DefaultDataResource} が見つからないため展開できません");
+                }
+            }
+        }
+        catch (IOException e)
+        {
+            Debug.LogWarning($"SavePathProvider: デフォルトデータ展開に失敗: {e.Message}");
         }
 
-        var directory = Path.GetDirectoryName(destinationPath);
-        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
-        File.WriteAllText(destinationPath, seed.text);
-        Debug.Log($"Created initial scene data: {destinationPath}");
-        return true;
+        return path;
     }
 }

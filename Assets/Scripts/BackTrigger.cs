@@ -1,18 +1,20 @@
 using UnityEngine;
 
-public class BackTrigger : MonoBehaviour
+public class BackTrigger : MonoBehaviour, IPlayerInteractable
 {
     private bool consumed;
 
-    private void OnTriggerEnter(Collider other)
+    public string InteractionPrompt => "後ろの扉を開く  [E / X]";
+    public bool CanInteract => !consumed;
+
+    public void Interact(GameObject interactor)
     {
-        if (!consumed && other.CompareTag("Player"))
-        {
-            consumed = true;
-            Debug.Log("Back trigger entered");
-            GameManager gm = FindFirstObjectByType<GameManager>();
-            if (gm != null) gm.PlayerChose(false);
-            else consumed = false;
-        }
+        if (consumed || interactor == null || !interactor.CompareTag("Player")) return;
+
+        var gameManager = FindFirstObjectByType<GameManager>();
+        if (gameManager == null) return;
+
+        consumed = true;
+        gameManager.PlayerChose(false);
     }
 }

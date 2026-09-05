@@ -1,19 +1,21 @@
 using UnityEngine;
 
-public class ForwardTrigger : MonoBehaviour
+public class ForwardTrigger : MonoBehaviour, IPlayerInteractable
 {
     private bool consumed;
 
-    private void OnTriggerEnter(Collider other)
+    public string InteractionPrompt => "前の扉を開く  [E / X]";
+    public bool CanInteract => !consumed;
+
+    public void Interact(GameObject interactor)
     {
-        if (!consumed && other.CompareTag("Player"))
-        {
-            consumed = true;
-            Debug.Log("Forward trigger entered");
-            GameManager gm = FindFirstObjectByType<GameManager>();
-            if (gm != null) gm.PlayerChose(true);
-            else consumed = false;
-        }
+        if (consumed || interactor == null || !interactor.CompareTag("Player")) return;
+
+        var gameManager = FindFirstObjectByType<GameManager>();
+        if (gameManager == null) return;
+
+        consumed = true;
+        gameManager.PlayerChose(true);
     }
 }
 
