@@ -116,8 +116,11 @@ public static class AnomalyRuntimeFactory
         ritual.Configure(GetProfile(prefabId), gameManager, player, threatsEnabled);
         ConfigureBuiltInPhenomenon(instance, prefabId, ritual, player, gameManager != null);
 
-        var recognitionAudio = instance.GetComponent<AnomalyRecognitionAudio>() ??
-                               instance.AddComponent<AnomalyRecognitionAudio>();
+        // ?? は Unity の == オーバーロードを迂回し擬似 null を通してしまうため使わない。
+        if (!instance.TryGetComponent(out AnomalyRecognitionAudio recognitionAudio))
+        {
+            recognitionAudio = instance.AddComponent<AnomalyRecognitionAudio>();
+        }
         recognitionAudio.Configure(ritual);
         return ritual;
     }
@@ -139,32 +142,50 @@ public static class AnomalyRuntimeFactory
     {
         if (string.Equals(prefabId, "anomaryShirinkBox", StringComparison.OrdinalIgnoreCase))
         {
-            var phenomenon = instance.GetComponent<SmoothDistanceShrink>() ?? instance.AddComponent<SmoothDistanceShrink>();
+            if (!instance.TryGetComponent(out SmoothDistanceShrink phenomenon))
+            {
+                phenomenon = instance.AddComponent<SmoothDistanceShrink>();
+            }
             phenomenon.Configure(player);
         }
         else if (string.Equals(prefabId, "changeColorBox", StringComparison.OrdinalIgnoreCase))
         {
-            var phenomenon = instance.GetComponent<LookAwayColorPhenomenon>() ?? instance.AddComponent<LookAwayColorPhenomenon>();
+            if (!instance.TryGetComponent(out LookAwayColorPhenomenon phenomenon))
+            {
+                phenomenon = instance.AddComponent<LookAwayColorPhenomenon>();
+            }
             phenomenon.Configure(ritual);
         }
         else if (string.Equals(prefabId, "DollPrefab", StringComparison.OrdinalIgnoreCase))
         {
-            var phenomenon = instance.GetComponent<ReturningDollPhenomenon>() ?? instance.AddComponent<ReturningDollPhenomenon>();
+            if (!instance.TryGetComponent(out ReturningDollPhenomenon phenomenon))
+            {
+                phenomenon = instance.AddComponent<ReturningDollPhenomenon>();
+            }
             phenomenon.Configure(ritual);
         }
         else if (string.Equals(prefabId, "ChairPrefab", StringComparison.OrdinalIgnoreCase))
         {
-            var phenomenon = instance.GetComponent<CountingChairPhenomenon>() ?? instance.AddComponent<CountingChairPhenomenon>();
+            if (!instance.TryGetComponent(out CountingChairPhenomenon phenomenon))
+            {
+                phenomenon = instance.AddComponent<CountingChairPhenomenon>();
+            }
             phenomenon.Configure(ritual);
         }
         else if (string.Equals(prefabId, "wall", StringComparison.OrdinalIgnoreCase))
         {
-            var phenomenon = instance.GetComponent<BreathingWallPhenomenon>() ?? instance.AddComponent<BreathingWallPhenomenon>();
+            if (!instance.TryGetComponent(out BreathingWallPhenomenon phenomenon))
+            {
+                phenomenon = instance.AddComponent<BreathingWallPhenomenon>();
+            }
             phenomenon.Configure(ritual, player);
         }
         else if (string.Equals(prefabId, "footstepEcho", StringComparison.OrdinalIgnoreCase))
         {
-            var phenomenon = instance.GetComponent<ExtraFootstepAnomaly>() ?? instance.AddComponent<ExtraFootstepAnomaly>();
+            if (!instance.TryGetComponent(out ExtraFootstepAnomaly phenomenon))
+            {
+                phenomenon = instance.AddComponent<ExtraFootstepAnomaly>();
+            }
             phenomenon.Configure(ritual, player, hideMarker: isPlayRound);
         }
     }

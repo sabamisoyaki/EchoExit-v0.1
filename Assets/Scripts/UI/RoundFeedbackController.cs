@@ -146,7 +146,8 @@ public class RoundFeedbackController : MonoBehaviour
         if (overlay != null && messageText != null && progressText != null) return;
 
         // Reuse the scene's configured font so Japanese glyphs and project styling carry over.
-        TMP_FontAsset sceneFont = FindFirstObjectByType<TMP_Text>()?.font;
+        var fontSource = FindFirstObjectByType<TMP_Text>();
+        TMP_FontAsset sceneFont = fontSource != null ? fontSource.font : null;
 
         var canvasObject = new GameObject("Round Feedback Canvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
         canvasObject.transform.SetParent(transform, false);

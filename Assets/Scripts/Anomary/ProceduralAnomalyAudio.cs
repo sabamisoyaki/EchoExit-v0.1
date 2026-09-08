@@ -32,7 +32,16 @@ public static class ProceduralAnomalyAudio
 
     public static AudioSource EnsureSpatialSource(GameObject host)
     {
-        var source = host.GetComponent<AudioSource>() ?? host.AddComponent<AudioSource>();
+        if (host == null) return null;
+
+        // Unity のオブジェクトは == を「未アタッチ/破棄済みなら null」にオーバーロードしているが、
+        // ?? は真の null 判定を使うためそれを迂回する。GetComponent の返す擬似 null が
+        // そのまま通り、AddComponent が呼ばれずに MissingComponentException になる。
+        if (!host.TryGetComponent(out AudioSource source))
+        {
+            source = host.AddComponent<AudioSource>();
+        }
+
         source.playOnAwake = false;
         source.spatialBlend = 1f;
         source.rolloffMode = AudioRolloffMode.Linear;
