@@ -1,15 +1,15 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 
 public class TurnWithCamera : MonoBehaviour
 {
-    public Transform cameraTransform;  // Inspector‚Å Main Camera ‚ðŽw’è
+    public Transform cameraTransform;  // Inspectorã§ Main Camera ã‚’æŒ‡å®š
 
     void Update()
     {
         if (Input.GetAxis("Horizontal") != 0 || Input.GetAxis("Vertical") != 0)
         {
             Vector3 forward = cameraTransform.forward;
-            forward.y = 0; // …•½–Ê‚¾‚¯‚ðŒü‚­
+            forward.y = 0; // æ°´å¹³é¢ã ã‘ã‚’å‘ã
             if (forward.sqrMagnitude > 0.001f)
             {
                 transform.rotation = Quaternion.Slerp(

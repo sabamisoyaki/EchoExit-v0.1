@@ -1,4 +1,4 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 
 public class ThirdPersonMovement : MonoBehaviour
 {
@@ -16,12 +16,12 @@ public class ThirdPersonMovement : MonoBehaviour
         float mouseX = Input.GetAxis("Mouse X") * mouseSensitivity;
         float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity;
 
-        // ã‰º‚Ì‹“_iƒJƒƒ‰‚ÌX‰ñ“]j
+        // ä¸Šä¸‹ã®è¦–ç‚¹ï¼ˆã‚«ãƒ¡ãƒ©ã®Xå›è»¢ï¼‰
         xRotation -= mouseY;
         xRotation = Mathf.Clamp(xRotation, -80f, 80f);
         transform.localRotation = Quaternion.Euler(xRotation, 0f, 0f);
 
-        // ¶‰E‚Ì‹“_iƒLƒƒƒ‰‚ÌY‰ñ“]j
+        // å·¦å³ã®è¦–ç‚¹ï¼ˆã‚­ãƒ£ãƒ©ã®Yå›è»¢ï¼‰
         playerBody.Rotate(Vector3.up * mouseX);
     }
 }

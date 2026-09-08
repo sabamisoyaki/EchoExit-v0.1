@@ -1,12 +1,12 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 
 public class CameraController : MonoBehaviour
 {
-    public Transform target;        // Player‚ÌTransform
+    public Transform target;        // Playerã®Transform
     public float distance = 4f;
     public Vector2 pitchLimits = new Vector2(-20f, 60f);
-    public float mouseSensitivity = 60f;  // ­‚µ’á‚ß
-    public float smoothTime = 0.1f; // Šµ«‚Ì‹­‚³i‘å‚«‚¢‚Ù‚Ç“İ‚¢j
+    public float mouseSensitivity = 60f;  // å°‘ã—ä½ã‚
+    public float smoothTime = 0.1f; // æ…£æ€§ã®å¼·ã•ï¼ˆå¤§ãã„ã»ã©éˆã„ï¼‰
 
     float yaw;
     float pitch;
@@ -23,20 +23,20 @@ public class CameraController : MonoBehaviour
 
     void LateUpdate()
     {
-        // “ü—Í‚©‚ç–Ú•WŠp“x‚ğŒvZ
+        // å…¥åŠ›ã‹ã‚‰ç›®æ¨™è§’åº¦ã‚’è¨ˆç®—
         float targetYaw = yaw + Input.GetAxis("Mouse X") * mouseSensitivity * Time.deltaTime;
         float targetPitch = pitch - Input.GetAxis("Mouse Y") * mouseSensitivity * Time.deltaTime;
         targetPitch = Mathf.Clamp(targetPitch, pitchLimits.x, pitchLimits.y);
 
-        // •âŠÔ‚µ‚Äud‚³v‚ğo‚·
+        // è£œé–“ã—ã¦ã€Œé‡ã•ã€ã‚’å‡ºã™
         currentYaw = Mathf.SmoothDamp(currentYaw, targetYaw, ref yawSmoothVelocity, smoothTime);
         currentPitch = Mathf.SmoothDamp(currentPitch, targetPitch, ref pitchSmoothVelocity, smoothTime);
 
-        // “à•”’l‚àXV
+        // å†…éƒ¨å€¤ã‚‚æ›´æ–°
         yaw = targetYaw;
         pitch = targetPitch;
 
-        // ƒJƒƒ‰‚Ì‰ñ“]EˆÊ’u‚ğXV
+        // ã‚«ãƒ¡ãƒ©ã®å›è»¢ãƒ»ä½ç½®ã‚’æ›´æ–°
         Quaternion rot = Quaternion.Euler(currentPitch, currentYaw, 0);
         Vector3 pos = target.position + rot * new Vector3(0, 0, -distance);
 

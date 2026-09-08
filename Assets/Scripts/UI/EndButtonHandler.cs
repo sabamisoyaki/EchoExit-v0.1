@@ -1,4 +1,4 @@
-using System;
+ï»¿using System;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -6,23 +6,23 @@ public class EndButtonHandler : MonoBehaviour
 {
     public void OnStartButtonPressed()
     {
-        SceneManager.LoadScene("MainScene"); // ƒQ[ƒ€–{•Ò‚ÌƒV[ƒ“–¼‚É•ÏX
+        SceneManager.LoadScene("MainScene"); // ã‚²ãƒ¼ãƒ æœ¬ç·¨ã®ã‚·ãƒ¼ãƒ³åã«å¤‰æ›´
     }
     public void OnQuitButtonPressed()
     {
-        Debug.Log("Quit"); // Unity ‚ÌƒRƒ“ƒ\[ƒ‹‚Éo—Í
-        Application.Quit(); // ƒrƒ‹ƒhŒã‚ÉƒQ[ƒ€I—¹
+        Debug.Log("Quit"); // Unity ã®ã‚³ãƒ³ã‚½ãƒ¼ãƒ«ã«å‡ºåŠ›
+        Application.Quit(); // ãƒ“ãƒ«ãƒ‰å¾Œã«ã‚²ãƒ¼ãƒ çµ‚äº†
 #if UNITY_EDITOR
-        UnityEditor.EditorApplication.isPlaying = false; // ƒGƒfƒBƒ^—p
+        UnityEditor.EditorApplication.isPlaying = false; // ã‚¨ãƒ‡ã‚£ã‚¿ç”¨
 #endif
     }
 
     void Start()
     {
-        // ƒ}ƒEƒXƒJ[ƒ\ƒ‹‚ğ•\¦
+        // ãƒã‚¦ã‚¹ã‚«ãƒ¼ã‚½ãƒ«ã‚’è¡¨ç¤º
         Cursor.visible = true;
 
-        // ƒ}ƒEƒXƒJ[ƒ\ƒ‹‚ğƒƒbƒN‰ğœi©—R‚É“®‚¯‚éó‘Ôj
+        // ãƒã‚¦ã‚¹ã‚«ãƒ¼ã‚½ãƒ«ã‚’ãƒ­ãƒƒã‚¯è§£é™¤ï¼ˆè‡ªç”±ã«å‹•ã‘ã‚‹çŠ¶æ…‹ï¼‰
         Cursor.lockState = CursorLockMode.None;
     }
 

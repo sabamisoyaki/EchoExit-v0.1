@@ -1,4 +1,4 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 using System.Collections;
 
 public class TeddyVanishRespawn : MonoBehaviour
@@ -20,15 +20,15 @@ public class TeddyVanishRespawn : MonoBehaviour
         audioSource = GetComponent<AudioSource>();
         renderers = GetComponentsInChildren<Renderer>();
 
-        // ƒvƒŒƒCƒ„[©“®æ“¾
+        // ãƒ—ãƒ¬ã‚¤ãƒ¤ãƒ¼è‡ªå‹•å–å¾—
         if (player == null)
         {
             GameObject playerObj = GameObject.FindWithTag("Player");
             if (playerObj != null) player = playerObj.transform;
-            else Debug.LogError("PlayerƒIƒuƒWƒFƒNƒg‚ªŒ©‚Â‚©‚è‚Ü‚¹‚ñBƒ^ƒO 'Player' ‚ğŠm”F‚µ‚Ä‚­‚¾‚³‚¢B");
+            else Debug.LogError("Playerã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆãŒè¦‹ã¤ã‹ã‚Šã¾ã›ã‚“ã€‚ã‚¿ã‚° 'Player' ã‚’ç¢ºèªã—ã¦ãã ã•ã„ã€‚");
         }
 
-        // Œ³ƒ}ƒeƒŠƒAƒ‹•Û‘¶
+        // å…ƒãƒãƒ†ãƒªã‚¢ãƒ«ä¿å­˜
         originalMaterials = new Material[renderers.Length];
         for (int i = 0; i < renderers.Length; i++)
         {
@@ -51,7 +51,7 @@ public class TeddyVanishRespawn : MonoBehaviour
     {
         isVanishing = true;
 
-        // Œø‰Ê‰¹Ä¶i1•bŒã‚É0.3•bƒtƒF[ƒhƒAƒEƒgj
+        // åŠ¹æœéŸ³å†ç”Ÿï¼ˆ1ç§’å¾Œã«0.3ç§’ãƒ•ã‚§ãƒ¼ãƒ‰ã‚¢ã‚¦ãƒˆï¼‰
         if (vanishSound)
         {
             audioSource.clip = vanishSound;
@@ -60,7 +60,7 @@ public class TeddyVanishRespawn : MonoBehaviour
             StartCoroutine(FadeOutAfterDelay(1.0f, 0.3f));
         }
 
-        // •ƒ}ƒeƒŠƒAƒ‹“K—p
+        // é»’ãƒãƒ†ãƒªã‚¢ãƒ«é©ç”¨
         foreach (var r in renderers)
         {
             r.material = blackMaterial;
@@ -68,7 +68,7 @@ public class TeddyVanishRespawn : MonoBehaviour
 
         yield return new WaitForSeconds(vanishDelay);
 
-        // ”ñ•\¦‰»
+        // éè¡¨ç¤ºåŒ–
         foreach (var r in renderers)
         {
             r.enabled = false;
@@ -76,14 +76,14 @@ public class TeddyVanishRespawn : MonoBehaviour
 
         yield return new WaitForSeconds(respawnDelay);
 
-        // Œ³‚É–ß‚µ‚ÄÄ•\¦
+        // å…ƒã«æˆ»ã—ã¦å†è¡¨ç¤º
         for (int i = 0; i < renderers.Length; i++)
         {
             renderers[i].material = originalMaterials[i];
             renderers[i].enabled = true;
         }
 
-        isVanishing = false; // ÄƒgƒŠƒK[‰Â”\‚É
+        isVanishing = false; // å†ãƒˆãƒªã‚¬ãƒ¼å¯èƒ½ã«
     }
 
     IEnumerator FadeOutAfterDelay(float delay, float fadeDuration)
@@ -101,6 +101,6 @@ public class TeddyVanishRespawn : MonoBehaviour
         }
 
         audioSource.Stop();
-        audioSource.volume = 1.0f; // Ÿ‰ñÄ¶—p‚ÉƒŠƒZƒbƒg
+        audioSource.volume = 1.0f; // æ¬¡å›å†ç”Ÿç”¨ã«ãƒªã‚»ãƒƒãƒˆ
     }
 }

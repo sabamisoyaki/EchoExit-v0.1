@@ -1,4 +1,4 @@
-using UnityEngine;
+ï»¿using UnityEngine;
 
 public class SeenColorShift : MonoBehaviour
 {
@@ -44,7 +44,7 @@ public class SeenColorShift : MonoBehaviour
 
             isCurrentlyVisible = true;
 
-            // ’Ž‹ŽžŠÔ‚ðƒJƒEƒ“ƒg
+            // æ³¨è¦–æ™‚é–“ã‚’ã‚«ã‚¦ãƒ³ãƒˆ
             gazeTimer += Time.deltaTime;
 
             if (gazeTimer >= requiredGazeTime)
@@ -58,7 +58,7 @@ public class SeenColorShift : MonoBehaviour
             {
                 exitTimer += Time.deltaTime;
 
-                // © ˆê’èŽžŠÔŽ‹ü‚ðŠO‚µ‚Ä‚¢‚½‚çÔ‚É
+                // â† ä¸€å®šæ™‚é–“è¦–ç·šã‚’å¤–ã—ã¦ã„ãŸã‚‰èµ¤ã«
                 if (exitTimer >= delayBeforeRed)
                 {
                     objRenderer.material.color = seenColor;
