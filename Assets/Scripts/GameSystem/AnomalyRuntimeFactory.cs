@@ -98,8 +98,6 @@ public static class AnomalyRuntimeFactory
         bool threatsEnabled)
     {
         if (instance == null) return null;
-
-        DisableLegacyPhenomena(instance);
         if (!isAnomaly) return null;
 
         if (instance.GetComponent<AbnormalityInstanceMarker>() == null)
@@ -125,13 +123,6 @@ public static class AnomalyRuntimeFactory
         return ritual;
     }
 
-    private static void DisableLegacyPhenomena(GameObject instance)
-    {
-        // 旧スクリプトの独自判定は共通儀式と競合するため、通常版・異変版とも停止する。
-        SetEnabled<TeddyVanishRespawn>(instance, false);
-        SetEnabled<ShrinkByDistance>(instance, false);
-        SetEnabled<SeenColorShift>(instance, false);
-    }
 
     private static void ConfigureBuiltInPhenomenon(
         GameObject instance,
@@ -187,14 +178,6 @@ public static class AnomalyRuntimeFactory
                 phenomenon = instance.AddComponent<ExtraFootstepAnomaly>();
             }
             phenomenon.Configure(ritual, player, hideMarker: isPlayRound);
-        }
-    }
-
-    private static void SetEnabled<T>(GameObject instance, bool enabled) where T : Behaviour
-    {
-        foreach (var behaviour in instance.GetComponentsInChildren<T>(true))
-        {
-            behaviour.enabled = enabled;
         }
     }
 }
