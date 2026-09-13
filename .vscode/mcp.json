@@ -1,0 +1,11 @@
+{
+  "servers": {
+    "unity": {
+      "type": "stdio",
+      "command": "C:\\Users\\yabuk\\AppData\\Local\\Unity\\bin\\unity.exe",
+      "args": [
+        "mcp"
+      ]
+    }
+  }
+}
