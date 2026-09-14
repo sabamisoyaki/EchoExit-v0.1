@@ -101,11 +101,15 @@ namespace Door666.Tests
             var canvas = game.UI.GetComponent<Canvas>();
             var originalMode = canvas.renderMode;
             var originalCamera = canvas.worldCamera;
+            var originalTarget = camera.targetTexture;
             var target = new RenderTexture(1600, 900, 24);
             var image = new Texture2D(1600, 900, TextureFormat.RGB24, false);
             var previous = RenderTexture.active;
             try
             {
+                // Frame the stage editor for the capture size rather than the batch-mode window.
+                camera.targetTexture = target;
+                game.StageEditor.FrameCamera();
                 canvas.renderMode = RenderMode.ScreenSpaceCamera;
                 canvas.worldCamera = camera;
                 canvas.planeDistance = .3f;
@@ -120,6 +124,8 @@ namespace Door666.Tests
             {
                 canvas.renderMode = originalMode;
                 canvas.worldCamera = originalCamera;
+                camera.targetTexture = originalTarget;
+                game.StageEditor.FrameCamera();
                 RenderTexture.active = previous;
                 Object.Destroy(image);
                 Object.Destroy(target);

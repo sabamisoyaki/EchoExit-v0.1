@@ -321,7 +321,7 @@ namespace Door666.Runtime
             label.alignment = TextAlignmentOptions.Center;
             label.color = color;
             label.rectTransform.sizeDelta = new Vector2(width, height);
-            label.enableWordWrapping = false;
+            label.textWrappingMode = TextWrappingModes.NoWrap;
             label.overflowMode = TextOverflowModes.Overflow;
             label.renderer.shadowCastingMode = ShadowCastingMode.Off;
             label.renderer.receiveShadows = false;

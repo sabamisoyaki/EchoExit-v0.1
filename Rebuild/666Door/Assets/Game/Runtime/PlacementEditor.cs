@@ -11,6 +11,10 @@ namespace Door666.Runtime
     /// <summary>Edits an isolated placement draft. No anomaly runtime runs in this view.</summary>
     public sealed class PlacementEditor
     {
+        // Walled field (14.3 x 19.3 including walls) plus a margin, centred on the field's middle.
+        private static readonly Vector2 PlanSize = new Vector2(15.4f, 20.4f);
+        private static readonly Vector3 PlanCenter = new Vector3(0, 0, 2.5f);
+
         private readonly SessionCoordinator game;
         private readonly Dictionary<string, StageDefinitionMetadata> metadata = new Dictionary<string, StageDefinitionMetadata>(StringComparer.Ordinal);
         private readonly Dictionary<string, float> anchorHeights = new Dictionary<string, float>(StringComparer.Ordinal);
@@ -33,6 +37,9 @@ namespace Door666.Runtime
         private float savedOrthographicSize;
         private bool savedOrthographic;
         private bool savedFog;
+        private Color savedAmbientSky;
+        private Color savedAmbientEquator;
+        private Color savedAmbientGround;
 
         public int CurrentSceneId => draft == null ? 0 : draft.sceneId;
         public bool HasUnsavedChanges => dirty;
@@ -50,10 +57,13 @@ namespace Door666.Runtime
             savedOrthographicSize = camera.orthographicSize;
             savedOrthographic = camera.orthographic;
             savedFog = RenderSettings.fog;
+            savedAmbientSky = RenderSettings.ambientSkyColor;
+            savedAmbientEquator = RenderSettings.ambientEquatorColor;
+            savedAmbientGround = RenderSettings.ambientGroundColor;
             camera.orthographic = true;
-            camera.rect = new Rect(.25f, .13f, .75f, .87f);
-            camera.orthographicSize = 10.4f;
-            camera.transform.SetPositionAndRotation(new Vector3(0, 18, 2.5f), Quaternion.Euler(90, 0, 0));
+            // A partial viewport leaves the rest of the back buffer uncleared, so render full screen and frame the plan instead.
+            camera.rect = new Rect(0, 0, 1, 1);
+            FrameCamera();
             overlays = new GameObject("Placement editing guides");
             CreateMaterials();
             var line = new GameObject("Placement outline");
@@ -90,6 +100,9 @@ namespace Door666.Runtime
                 camera.orthographicSize = savedOrthographicSize;
             }
             RenderSettings.fog = savedFog;
+            RenderSettings.ambientSkyColor = savedAmbientSky;
+            RenderSettings.ambientEquatorColor = savedAmbientEquator;
+            RenderSettings.ambientGroundColor = savedAmbientGround;
             unknownMarkers.Clear();
             selected = null;
             draft = null;
@@ -100,9 +113,7 @@ namespace Door666.Runtime
         {
             if (!open || draft == null) return;
             var camera = game.Player.View;
-            // Keep the entire field visible in the portion of the window beside the palette.
-            float viewportAspect = Screen.width * camera.rect.width / Mathf.Max(1, Screen.height * camera.rect.height);
-            camera.orthographicSize = Mathf.Max(10.4f, 7.4f / Mathf.Max(.2f, viewportAspect));
+            FrameCamera();
             bool blocked = game.UI.TextHasFocus || game.UI.PointerOverUI;
             if (blocked)
             {
@@ -129,7 +140,9 @@ namespace Door666.Runtime
             }
 
             var screenPoint = mouse.position.ReadValue();
-            if (!camera.pixelRect.Contains(screenPoint))
+            var plan = new Rect(Screen.width * GameUI.EditorPaletteWidth, Screen.height * GameUI.EditorStatusHeight,
+                Screen.width * (1 - GameUI.EditorPaletteWidth), Screen.height * (1 - GameUI.EditorStatusHeight));
+            if (!plan.Contains(screenPoint))
             {
                 if (preview != null) preview.gameObject.SetActive(false);
                 if (pending != null && outline != null) outline.enabled = false;
@@ -174,6 +187,22 @@ namespace Door666.Runtime
                 game.UI.EditorMessage(selected == null ? "配置物をクリックして選択できます。"
                     : game.World.Catalog.DisplayName(selected.prefabId) + "を選択しました。回転 [R] ／ 削除 [Del]");
             }
+        }
+
+        /// <summary>Fits the walled field into the screen area beside the palette and above the status bar.</summary>
+        public void FrameCamera()
+        {
+            if (!open) return;
+            var camera = game.Player.View;
+            float aspect = camera.pixelWidth / (float)Mathf.Max(1, camera.pixelHeight);
+            float planWidth = 1 - GameUI.EditorPaletteWidth;
+            float planHeight = 1 - GameUI.EditorStatusHeight;
+            float size = Mathf.Max(PlanSize.y * .5f / planHeight, PlanSize.x * .5f / (aspect * planWidth));
+            camera.orthographicSize = size;
+            // Shift the camera so the plan's centre lands in the middle of the uncovered area, not of the whole screen.
+            float shiftX = (GameUI.EditorPaletteWidth + planWidth * .5f - .5f) * 2 * size * aspect;
+            float shiftZ = (GameUI.EditorStatusHeight + planHeight * .5f - .5f) * 2 * size;
+            camera.transform.SetPositionAndRotation(new Vector3(PlanCenter.x - shiftX, 18, PlanCenter.z - shiftZ), Quaternion.Euler(90, 0, 0));
         }
 
         public void Load(int sceneId)
@@ -319,6 +348,10 @@ namespace Door666.Runtime
             unknownMarkers.Clear();
             game.World.Build(draft, true, int.MaxValue, editing: true);
             RenderSettings.fog = false;
+            // Ceiling fixtures only light the floor beneath them; a plan view needs even light to read placements.
+            RenderSettings.ambientSkyColor = new Color(.46f, .47f, .38f);
+            RenderSettings.ambientEquatorColor = new Color(.40f, .40f, .32f);
+            RenderSettings.ambientGroundColor = new Color(.30f, .29f, .23f);
             foreach (var placed in game.World.PlacedObjects)
             {
                 if (placed != null && placed.GetComponentsInChildren<Renderer>().Length == 0)

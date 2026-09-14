@@ -11,6 +11,10 @@ namespace Door666.Runtime
 {
     public sealed class GameUI : MonoBehaviour
     {
+        // Screen fractions covered by the stage editor's palette (left) and status bar (bottom).
+        public const float EditorPaletteWidth = .25f;
+        public const float EditorStatusHeight = .11f;
+
         private SessionCoordinator game;
         private TMP_FontAsset font;
         private RectTransform root;
@@ -176,7 +180,7 @@ namespace Door666.Runtime
         public void ShowEditor(int currentId, bool anomalyCategory)
         {
             BeginMenu(false);
-            var panel = Panel(menu.transform, "Stage editing", new Color(.025f, .033f, .027f, .97f), Vector2.zero, new Vector2(.25f, 1));
+            var panel = Panel(menu.transform, "Stage editing", new Color(.025f, .033f, .027f, .97f), Vector2.zero, new Vector2(EditorPaletteWidth, 1));
             Label(panel.transform, "部屋を編集", 34, new Vector2(.08f, .89f), new Vector2(.92f, .97f));
             Label(panel.transform, "ステージ番号", 18, new Vector2(.08f, .83f), new Vector2(.9f, .89f)).color = muted;
             stageId = Field(panel.transform, currentId.ToString(), new Vector2(.10f, .77f), new Vector2(.44f, .83f));
@@ -199,8 +203,12 @@ namespace Door666.Runtime
             ButtonAt(panel.transform, "削除 [Del]", new Vector2(.51f, .13f), new Vector2(.92f, .19f), () => game.StageEditor.Delete());
             ButtonAt(panel.transform, "保存 [F5]", new Vector2(.08f, .065f), new Vector2(.92f, .12f), () => game.StageEditor.Save(stageId.text));
             ButtonAt(panel.transform, "タイトルへ（未保存は破棄）", new Vector2(.08f, .008f), new Vector2(.92f, .06f), () => game.ShowTitle());
-            editorStatus = Label(menu.transform, "名前を選んで床をクリックすると配置できます。\n配置物をクリックして選択。右クリックで配置を解除。", 19, new Vector2(.28f, .02f), new Vector2(.97f, .12f));
-            editorStatus.color = ink;
+            // An opaque bar keeps messages readable over the map and stops clicks under it from placing objects.
+            var status = Panel(menu.transform, "Editor status", new Color(.025f, .033f, .027f, .94f), new Vector2(EditorPaletteWidth, 0), new Vector2(1, EditorStatusHeight));
+            editorStatus = Label(status.transform, "名前を選んで床をクリックすると配置できます。\n配置物をクリックして選択。右クリックで配置を解除。", 19, new Vector2(.025f, .06f), new Vector2(.975f, .94f));
+            editorStatus.enableAutoSizing = true;
+            editorStatus.fontSizeMin = 12;
+            editorStatus.fontSizeMax = 19;
         }
 
         public void EditorMessage(string message) { if (editorStatus != null) editorStatus.text = message; }
@@ -266,7 +274,12 @@ namespace Door666.Runtime
             colors.pressedColor = accent;
             button.colors = colors;
             if (action != null) button.onClick.AddListener(() => action());
-            Label(go.transform, label, 21, new Vector2(.05f, .04f), new Vector2(.95f, .96f), TextAlignmentOptions.Center);
+            // Button captions stay on one line and shrink instead of wrapping out of narrow buttons.
+            var caption = Label(go.transform, label, 21, new Vector2(.05f, .04f), new Vector2(.95f, .96f), TextAlignmentOptions.Center);
+            caption.textWrappingMode = TextWrappingModes.NoWrap;
+            caption.enableAutoSizing = true;
+            caption.fontSizeMin = 12;
+            caption.fontSizeMax = 21;
             return button;
         }
         private void Slider(Transform parent, string label, float y, float min, float max, float value, Action<float> changed)
