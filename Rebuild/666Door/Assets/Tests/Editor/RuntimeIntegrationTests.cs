@@ -9,6 +9,7 @@ using UnityEngine;
 using UnityEngine.AI;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
+using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 
 namespace Door666.Tests
@@ -18,17 +19,24 @@ namespace Door666.Tests
         [UnityTest]
         public IEnumerator TitleRoundLoopPauseTimeoutCaptureAndEditorWorkTogether()
         {
-            EditorSceneManager.OpenScene(GameConstants.ScenePath, OpenSceneMode.Single);
+            EditorSceneManager.OpenScene(GameConstants.ScenePath(GameConstants.TitleScene), OpenSceneMode.Single);
             yield return new EnterPlayMode();
-            yield return null;
-            var game = Object.FindFirstObjectByType<SessionCoordinator>();
-            Assert.That(game, Is.Not.Null);
-            Assert.That(game.Screen, Is.EqualTo(GameScreen.Title));
-            Capture(game, "01-title.png");
-            game.StartRun();
-            yield return null;
+            TitleSceneController title = null;
+            for (int frame = 0; frame < SceneTestUtility.MaxLoadFrames && !SceneTestUtility.IsReady(out title); frame++) yield return null;
+            Assert.That(title != null && title.IsReady, Is.True, "TitleSceneController did not become ready.");
+            Assert.That(title.Screen, Is.EqualTo(GameScreen.Title));
+            Assert.That(SceneManager.GetSceneByName(GameConstants.FieldScene).isLoaded, Is.True);
+            // Playing with the field already open beside the screen scene (as the editor shows it) must not load a second room.
+            Assert.That(Object.FindObjectsByType<FieldRoot>(FindObjectsSortMode.None), Has.Length.EqualTo(1));
+            Capture(title, "01-title.png");
+
+            title.StartRun();
+            GameSceneController game = null;
+            for (int frame = 0; frame < SceneTestUtility.MaxLoadFrames && !SceneTestUtility.IsReady(out game); frame++) yield return null;
+            Assert.That(game != null && game.IsReady, Is.True, "GameSceneController did not become ready.");
             Assert.That(game.Screen, Is.EqualTo(GameScreen.Playing));
             Assert.That(Object.FindObjectsByType<FirstPersonRig>(FindObjectsSortMode.None), Has.Length.EqualTo(1));
+            Assert.That(Object.FindObjectsByType<FieldRoot>(FindObjectsSortMode.None), Has.Length.EqualTo(1));
             Assert.That(game.Session.PlacedAnomalyCount, Is.EqualTo(game.World.PlacedAnomalyCount));
             Assert.That(game.World.PlacedObjects.Count(x => x.IsAnomaly), Is.EqualTo(game.World.PlacedAnomalyCount));
             var path = new NavMeshPath();
@@ -54,7 +62,8 @@ namespace Door666.Tests
             Assert.That(game.Session.EndReason, Is.EqualTo(RunEndReason.Escaped));
             Assert.That(game.Screen, Is.EqualTo(GameScreen.Ending));
             Capture(game, "03-escaped.png");
-            game.ShowTitle();
+
+            // Retrying from the ending restarts the run inside the same Game scene.
             game.StartRun();
             Assert.That(game.Session.Streak, Is.Zero);
             game.Session.Tick(181);
@@ -81,24 +90,29 @@ namespace Door666.Tests
             Assert.That(game.Session.CapturedBy, Is.EqualTo("叩き起こし"));
 
             game.StartEditor();
-            yield return null;
-            Assert.That(game.Screen, Is.EqualTo(GameScreen.Editing));
-            Assert.That(game.Player.View.orthographic, Is.True);
+            EditModeSceneController editor = null;
+            for (int frame = 0; frame < SceneTestUtility.MaxLoadFrames && !SceneTestUtility.IsReady(out editor); frame++) yield return null;
+            Assert.That(editor != null && editor.IsReady, Is.True, "EditModeSceneController did not become ready.");
+            Assert.That(editor.Screen, Is.EqualTo(GameScreen.Editing));
+            Assert.That(editor.Player.View.orthographic, Is.True);
             Assert.That(Object.FindObjectsByType<AnomalyActor>(FindObjectsSortMode.None), Is.Empty);
-            Capture(game, "04-stage-editor.png");
-            game.ShowTitle();
-            yield return null;
-            Assert.That(game.Session, Is.Null);
-            Assert.That(game.Player.View.orthographic, Is.False);
+            Capture(editor, "04-stage-editor.png");
+
+            editor.ShowTitle();
+            for (int frame = 0; frame < SceneTestUtility.MaxLoadFrames && !SceneTestUtility.IsReady(out title); frame++) yield return null;
+            Assert.That(title != null && title.IsReady, Is.True, "TitleSceneController did not become ready.");
+            Assert.That(title.Player.View.orthographic, Is.False);
+            Assert.That(Object.FindObjectsByType<SceneController>(FindObjectsSortMode.None), Has.Length.EqualTo(1));
             yield return new ExitPlayMode();
         }
 
-        private static void Capture(SessionCoordinator game, string name)
+        private static void Capture(SceneController screen, string name)
         {
             string directory = Path.GetFullPath(Path.Combine(Application.dataPath, "../Artifacts/Screenshots"));
             Directory.CreateDirectory(directory);
-            var camera = game.Player.View;
-            var canvas = game.UI.GetComponent<Canvas>();
+            var camera = screen.Player.View;
+            var editor = screen as EditModeSceneController;
+            var canvas = screen.UI.GetComponent<Canvas>();
             var originalMode = canvas.renderMode;
             var originalCamera = canvas.worldCamera;
             var originalTarget = camera.targetTexture;
@@ -109,7 +123,7 @@ namespace Door666.Tests
             {
                 // Frame the stage editor for the capture size rather than the batch-mode window.
                 camera.targetTexture = target;
-                game.StageEditor.FrameCamera();
+                if (editor != null) editor.StageEditor.FrameCamera();
                 canvas.renderMode = RenderMode.ScreenSpaceCamera;
                 canvas.worldCamera = camera;
                 canvas.planeDistance = .3f;
@@ -125,7 +139,7 @@ namespace Door666.Tests
                 canvas.renderMode = originalMode;
                 canvas.worldCamera = originalCamera;
                 camera.targetTexture = originalTarget;
-                game.StageEditor.FrameCamera();
+                if (editor != null) editor.StageEditor.FrameCamera();
                 RenderTexture.active = previous;
                 Object.Destroy(image);
                 Object.Destroy(target);

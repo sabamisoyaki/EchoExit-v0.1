@@ -44,7 +44,6 @@ namespace Door666.Tests
             finally
             {
                 Object.Destroy(environment);
-                objects.Dispose();
             }
             yield return null;
             yield return new ExitPlayMode();

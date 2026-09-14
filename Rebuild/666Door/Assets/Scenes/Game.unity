@@ -119,7 +119,7 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
---- !u!1 &1756393267
+--- !u!1 &1117215867
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -127,34 +127,34 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 1756393269}
-  - component: {fileID: 1756393268}
+  - component: {fileID: 1117215869}
+  - component: {fileID: 1117215868}
   m_Layer: 0
-  m_Name: "666\u53F7\u6249"
+  m_Name: Game
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &1756393268
+--- !u!114 &1117215868
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1756393267}
+  m_GameObject: {fileID: 1117215867}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2dbd6d5e1c3b04348bfbabc1da606596, type: 3}
+  m_Script: {fileID: 11500000, guid: 53e6be8499c8499e80f996dbbb144f40, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Door666.Runtime::Door666.Runtime.SessionCoordinator
---- !u!4 &1756393269
+  m_EditorClassIdentifier: Door666.Runtime::Door666.Runtime.GameSceneController
+--- !u!4 &1117215869
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1756393267}
+  m_GameObject: {fileID: 1117215867}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
@@ -167,4 +167,4 @@ Transform:
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
-  - {fileID: 1756393269}
+  - {fileID: 1117215869}

@@ -17,7 +17,7 @@ using Object = UnityEngine.Object;
 
 namespace Door666.Editor
 {
-    /// <summary>Reproducible asset generation; no scene or prefab YAML is authored by hand.</summary>
+    /// <summary>Reproducible project setup. Missing scenes are generated; existing scenes are left for hand editing.</summary>
     public static class ProjectBootstrap
     {
         private const string RenderingFolder = "Assets/Resources/Rendering";
@@ -28,8 +28,9 @@ namespace Door666.Editor
         [MenuItem("666号扉/プロジェクトを初期化")]
         public static void Setup()
         {
-            if (!File.Exists("Assets/Game/Runtime/SessionCoordinator.cs"))
+            if (!File.Exists("Assets/Game/Runtime/SceneController.cs"))
                 throw new InvalidOperationException("新規 666Door プロジェクトから実行してください。");
+            if (!Application.isBatchMode && !EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
 
             EnsureFolder("Assets/Scenes");
             EnsureFolder(RenderingFolder);
@@ -40,10 +41,23 @@ namespace Door666.Editor
             ConfigureJapaneseFont();
             EnsureSettings();
             ExportBearVisual();
-            CreateBootstrapScene();
+            EnsureCatalogMaterials();
+            EnsureScenes();
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
-            Debug.Log("666Door bootstrap complete. Scene: " + GameConstants.ScenePath);
+            if (!Application.isBatchMode) EditorSceneManager.OpenScene(GameConstants.ScenePath(GameConstants.TitleScene), OpenSceneMode.Single);
+            Debug.Log("666Door bootstrap complete. Start scene: " + GameConstants.ScenePath(GameConstants.TitleScene));
+        }
+
+        [MenuItem("666号扉/部屋シーンを作り直す（上書き）")]
+        public static void RecreateField()
+        {
+            string path = GameConstants.ScenePath(GameConstants.FieldScene);
+            if (!Application.isBatchMode && !EditorUtility.DisplayDialog("部屋シーンを作り直す",
+                path + " をコードから生成し直します。シーン上で手作業した変更は失われます。", "作り直す", "やめる")) return;
+            if (!Application.isBatchMode && !EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+            FieldSceneBuilder.Create(path);
+            AssetDatabase.SaveAssets();
         }
 
         private static void ConfigurePlayer()
@@ -288,12 +302,58 @@ namespace Door666.Editor
             finally { Object.DestroyImmediate(visual); }
         }
 
-        private static void CreateBootstrapScene()
+        private static void EnsureCatalogMaterials()
         {
+            string folder = "Assets/Resources/" + GameConstants.CatalogMaterialResource;
+            EnsureFolder(folder);
+            foreach (var spec in ObjectCatalog.Surfaces) EnsureSurfaceMaterial(folder, spec);
+        }
+
+        private static void EnsureScenes()
+        {
+            // The field comes first: screen scenes do not reference it, but it must exist before anything is played.
+            string fieldPath = GameConstants.ScenePath(GameConstants.FieldScene);
+            if (!File.Exists(fieldPath)) FieldSceneBuilder.Create(fieldPath);
+            EnsureScreenScene(GameConstants.TitleScene, typeof(TitleSceneController));
+            EnsureScreenScene(GameConstants.GameScene, typeof(GameSceneController));
+            EnsureScreenScene(GameConstants.EditModeScene, typeof(EditModeSceneController));
+
+            var scenes = new EditorBuildSettingsScene[GameConstants.BuildScenes.Length];
+            for (int i = 0; i < scenes.Length; i++)
+                scenes[i] = new EditorBuildSettingsScene(GameConstants.ScenePath(GameConstants.BuildScenes[i]), true);
+            EditorBuildSettings.scenes = scenes;
+        }
+
+        private static void EnsureScreenScene(string name, Type controller)
+        {
+            string path = GameConstants.ScenePath(name);
+            if (File.Exists(path)) return;
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
-            new GameObject("666号扉").AddComponent<SessionCoordinator>();
-            EditorSceneManager.SaveScene(scene, GameConstants.ScenePath);
-            EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(GameConstants.ScenePath, true) };
+            new GameObject(name, controller);
+            EditorSceneManager.SaveScene(scene, path);
+        }
+
+        internal static Material EnsureSurfaceMaterial(string folder, SurfaceSpec spec)
+        {
+            string path = folder + "/" + spec.Name + ".mat";
+            var material = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (material == null)
+            {
+                var shader = Shader.Find("Universal Render Pipeline/Lit");
+                if (shader == null) throw new InvalidOperationException("描画シェーダーが見つかりません: Universal Render Pipeline/Lit");
+                material = new Material(shader) { name = spec.Name };
+                AssetDatabase.CreateAsset(material, path);
+            }
+            material.color = spec.Color;
+            material.SetColor("_BaseColor", spec.Color);
+            material.SetFloat("_Smoothness", spec.Smoothness);
+            if (spec.Emissive)
+            {
+                material.EnableKeyword("_EMISSION");
+                material.SetColor("_EmissionColor", spec.Emission);
+            }
+            EditorUtility.SetDirty(material);
+            return material;
         }
 
         private static Material EnsureMaterial(string name, string shaderName, Color color, bool emission)
@@ -331,7 +391,7 @@ namespace Door666.Editor
             if (field != null) field.intValue = value;
         }
 
-        private static void EnsureFolder(string folder)
+        internal static void EnsureFolder(string folder)
         {
             if (AssetDatabase.IsValidFolder(folder)) return;
             string parent = Path.GetDirectoryName(folder).Replace('\\', '/');
@@ -344,9 +404,11 @@ namespace Door666.Editor
         {
             Setup();
             Directory.CreateDirectory("Builds/Windows");
+            var scenes = new string[GameConstants.BuildScenes.Length];
+            for (int i = 0; i < scenes.Length; i++) scenes[i] = GameConstants.ScenePath(GameConstants.BuildScenes[i]);
             var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
             {
-                scenes = new[] { GameConstants.ScenePath },
+                scenes = scenes,
                 locationPathName = "Builds/Windows/666Door.exe",
                 target = BuildTarget.StandaloneWindows64,
                 options = BuildOptions.None

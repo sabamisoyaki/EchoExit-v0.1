@@ -15,7 +15,7 @@ namespace Door666.Runtime
         public const float EditorPaletteWidth = .25f;
         public const float EditorStatusHeight = .11f;
 
-        private SessionCoordinator game;
+        private SceneController game;
         private TMP_FontAsset font;
         private RectTransform root;
         private GameObject menu;
@@ -39,7 +39,7 @@ namespace Door666.Runtime
         public bool PointerOverUI => EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
         public string EditorSceneIdText => stageId != null ? stageId.text : string.Empty;
 
-        public void Initialize(SessionCoordinator owner)
+        public void Initialize(SceneController owner)
         {
             game = owner;
             font = Resources.Load<TMP_FontAsset>(GameConstants.FontResource);
@@ -55,6 +55,7 @@ namespace Door666.Runtime
             if (EventSystem.current == null)
             {
                 var events = new GameObject("UI Input", typeof(EventSystem), typeof(InputSystemUIInputModule));
+                events.transform.SetParent(transform, false);
                 events.GetComponent<InputSystemUIInputModule>().AssignDefaultActions();
             }
             hud = Panel(root, "HUD", Color.clear, Vector2.zero, Vector2.one);
@@ -177,7 +178,7 @@ namespace Door666.Runtime
             ButtonAt(menu.transform, "タイトルへ", new Vector2(.35f, .1f), new Vector2(.65f, .19f), () => game.ShowTitle());
         }
 
-        public void ShowEditor(int currentId, bool anomalyCategory)
+        public void ShowEditor(PlacementEditor editor, int currentId, bool anomalyCategory)
         {
             BeginMenu(false);
             var panel = Panel(menu.transform, "Stage editing", new Color(.025f, .033f, .027f, .97f), Vector2.zero, new Vector2(EditorPaletteWidth, 1));
@@ -186,22 +187,22 @@ namespace Door666.Runtime
             stageId = Field(panel.transform, currentId.ToString(), new Vector2(.10f, .77f), new Vector2(.44f, .83f));
             ButtonAt(panel.transform, "読込", new Vector2(.48f, .77f), new Vector2(.70f, .83f), () =>
             {
-                if (int.TryParse(stageId.text, out int value)) game.StageEditor.Load(value);
+                if (int.TryParse(stageId.text, out int value)) editor.Load(value);
                 else EditorMessage("1以上の番号を入力してください。");
             });
-            ButtonAt(panel.transform, "新規", new Vector2(.72f, .77f), new Vector2(.94f, .83f), () => game.StageEditor.New());
-            ButtonAt(panel.transform, anomalyCategory ? "通常" : "● 通常", new Vector2(.08f, .68f), new Vector2(.49f, .74f), () => game.StageEditor.SetCategory(false));
-            ButtonAt(panel.transform, anomalyCategory ? "● 異変" : "異変", new Vector2(.51f, .68f), new Vector2(.92f, .74f), () => game.StageEditor.SetCategory(true));
+            ButtonAt(panel.transform, "新規", new Vector2(.72f, .77f), new Vector2(.94f, .83f), () => editor.New());
+            ButtonAt(panel.transform, anomalyCategory ? "通常" : "● 通常", new Vector2(.08f, .68f), new Vector2(.49f, .74f), () => editor.SetCategory(false));
+            ButtonAt(panel.transform, anomalyCategory ? "● 異変" : "異変", new Vector2(.51f, .68f), new Vector2(.92f, .74f), () => editor.SetCategory(true));
             int index = 0;
             foreach (var id in game.World.Catalog.PrefabIds)
             {
                 string key = id;
                 float y = .60f - index++ * .062f;
-                ButtonAt(panel.transform, game.World.Catalog.DisplayName(key), new Vector2(.08f, y), new Vector2(.92f, y + .052f), () => game.StageEditor.Choose(key));
+                ButtonAt(panel.transform, game.World.Catalog.DisplayName(key), new Vector2(.08f, y), new Vector2(.92f, y + .052f), () => editor.Choose(key));
             }
-            ButtonAt(panel.transform, "回転 [R]", new Vector2(.08f, .13f), new Vector2(.49f, .19f), () => game.StageEditor.Rotate());
-            ButtonAt(panel.transform, "削除 [Del]", new Vector2(.51f, .13f), new Vector2(.92f, .19f), () => game.StageEditor.Delete());
-            ButtonAt(panel.transform, "保存 [F5]", new Vector2(.08f, .065f), new Vector2(.92f, .12f), () => game.StageEditor.Save(stageId.text));
+            ButtonAt(panel.transform, "回転 [R]", new Vector2(.08f, .13f), new Vector2(.49f, .19f), () => editor.Rotate());
+            ButtonAt(panel.transform, "削除 [Del]", new Vector2(.51f, .13f), new Vector2(.92f, .19f), () => editor.Delete());
+            ButtonAt(panel.transform, "保存 [F5]", new Vector2(.08f, .065f), new Vector2(.92f, .12f), () => editor.Save(stageId.text));
             ButtonAt(panel.transform, "タイトルへ（未保存は破棄）", new Vector2(.08f, .008f), new Vector2(.92f, .06f), () => game.ShowTitle());
             // An opaque bar keeps messages readable over the map and stops clicks under it from placing objects.
             var status = Panel(menu.transform, "Editor status", new Color(.025f, .033f, .027f, .94f), new Vector2(EditorPaletteWidth, 0), new Vector2(1, EditorStatusHeight));

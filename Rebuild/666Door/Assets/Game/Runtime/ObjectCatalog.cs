@@ -9,8 +9,23 @@ using Object = UnityEngine.Object;
 namespace Door666.Runtime
 {
     /// <summary>Visual factories preserve legacy placement keys without embedding ritual rules.</summary>
-    public sealed class ObjectCatalog : IDisposable
+    public sealed class ObjectCatalog
     {
+        // Material assets under Resources/Materials/Catalog, shared by the field scene's furniture and runtime placements.
+        public static readonly SurfaceSpec[] Surfaces =
+        {
+            new SurfaceSpec("Varnished wood", new Color(.31f, .20f, .095f), .18f),
+            new SurfaceSpec("Worn wood edges", new Color(.16f, .105f, .059f), .03f),
+            new SurfaceSpec("Old cardboard", new Color(.56f, .43f, .24f), .03f),
+            new SurfaceSpec("Paper tape", new Color(.70f, .58f, .35f), .03f),
+            new SurfaceSpec("Porcelain", new Color(.74f, .70f, .60f), .38f),
+            new SurfaceSpec("Faded velvet", new Color(.27f, .20f, .18f), .03f),
+            new SurfaceSpec("Glass eyes", new Color(.014f, .012f, .011f), .8f),
+            new SurfaceSpec("Matted bear fur", new Color(.23f, .135f, .067f), .03f),
+            new SurfaceSpec("Worn bear muzzle", new Color(.45f, .34f, .19f), .03f),
+            new SurfaceSpec("Wallpaper panel", new Color(.54f, .51f, .28f), .03f)
+        };
+
         private sealed class Entry
         {
             public string Name;
@@ -23,7 +38,6 @@ namespace Door666.Runtime
 
         private readonly Dictionary<string, Entry> entries;
         private readonly List<string> ids;
-        private readonly List<Object> generated = new List<Object>();
         private readonly Material timber;
         private readonly Material darkTimber;
         private readonly Material cardboard;
@@ -39,16 +53,16 @@ namespace Door666.Runtime
 
         public ObjectCatalog()
         {
-            timber = Material("Varnished wood", new Color(.31f, .20f, .095f), .18f);
-            darkTimber = Material("Worn wood edges", new Color(.16f, .105f, .059f));
-            cardboard = Material("Old cardboard", new Color(.56f, .43f, .24f));
-            tape = Material("Paper tape", new Color(.70f, .58f, .35f));
-            porcelain = Material("Porcelain", new Color(.74f, .70f, .60f), .38f);
-            dress = Material("Faded velvet", new Color(.27f, .20f, .18f));
-            eye = Material("Glass eyes", new Color(.014f, .012f, .011f), .8f);
-            fur = Material("Matted bear fur", new Color(.23f, .135f, .067f));
-            muzzle = Material("Worn bear muzzle", new Color(.45f, .34f, .19f));
-            wall = Material("Wallpaper panel", new Color(.54f, .51f, .28f));
+            timber = LoadMaterial("Varnished wood");
+            darkTimber = LoadMaterial("Worn wood edges");
+            cardboard = LoadMaterial("Old cardboard");
+            tape = LoadMaterial("Paper tape");
+            porcelain = LoadMaterial("Porcelain");
+            dress = LoadMaterial("Faded velvet");
+            eye = LoadMaterial("Glass eyes");
+            fur = LoadMaterial("Matted bear fur");
+            muzzle = LoadMaterial("Worn bear muzzle");
+            wall = LoadMaterial("Wallpaper panel");
             entries = new Dictionary<string, Entry>(StringComparer.Ordinal)
             {
                 ["ChairPrefab"] = new Entry { Name = "席を数える椅子", Size = new Vector3(.70f, 1.10f, .72f), AnchorHeight = .5f, Factory = CreateChair },
@@ -230,15 +244,11 @@ namespace Door666.Runtime
             // The dormant echo has no visible body. Its recognition effect owns the footprints.
         }
 
-        private Material Material(string name, Color color, float smoothness = .03f)
+        private static Material LoadMaterial(string name)
         {
-            var shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Standard");
-            var material = new Material(shader) { name = name, color = color };
-            if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
-            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", smoothness);
-            if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", smoothness);
-            generated.Add(material);
+            var material = Resources.Load<Material>(GameConstants.CatalogMaterialResource + "/" + name);
+            if (material == null)
+                throw new InvalidOperationException("配置物のマテリアルがありません。メニュー「666号扉 → プロジェクトを初期化」を実行してください: " + name);
             return material;
         }
 
@@ -269,12 +279,6 @@ namespace Door666.Runtime
         }
 
         private static Vector3 ToVector(Float3 value) => new Vector3(value.x, value.y, value.z);
-
-        public void Dispose()
-        {
-            foreach (var asset in generated) if (asset != null) DestroyObject(asset);
-            generated.Clear();
-        }
 
         internal static void DestroyObject(Object target)
         {

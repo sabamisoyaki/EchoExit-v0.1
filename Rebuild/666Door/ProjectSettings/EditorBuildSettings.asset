@@ -6,7 +6,16 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/Scenes/666Door.unity
-    guid: 18200988fb968a645b1660c6f7562658
+    path: Assets/Scenes/Title.unity
+    guid: 5a58382496c13ba4680bb9a854f0fdfd
+  - enabled: 1
+    path: Assets/Scenes/Game.unity
+    guid: eb31459e5c0a1f845b04fa233e03ee2a
+  - enabled: 1
+    path: Assets/Scenes/EditMode.unity
+    guid: 5263888f9e5987b44904d35423af61b4
+  - enabled: 1
+    path: Assets/Scenes/Field.unity
+    guid: 4fb70bf53af73c8469c8c6ab3ef81727
   m_configObjects: {}
   m_UseUCBPForAssetBundles: 0

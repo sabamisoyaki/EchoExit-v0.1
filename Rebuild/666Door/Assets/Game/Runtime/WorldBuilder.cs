@@ -1,16 +1,11 @@
 using System;
 using System.Collections.Generic;
 using Door666.Core;
-using TMPro;
-using Unity.AI.Navigation;
 using UnityEngine;
-using UnityEngine.AI;
-using UnityEngine.Rendering;
-using Object = UnityEngine.Object;
 
 namespace Door666.Runtime
 {
-    /// <summary>A single, traversable field. Round changes replace only this hierarchy.</summary>
+    /// <summary>Places a stage's items into the authored field. Round changes replace only the placements.</summary>
     public sealed class WorldBuilder : IDisposable
     {
         public static readonly Vector3 SpawnPosition = new Vector3(0, .05f, -4.8f);
@@ -18,72 +13,29 @@ namespace Door666.Runtime
         public static readonly Vector3 BackDoorPosition = new Vector3(0, 0, -6.75f);
         public static readonly Bounds PlacementBounds = new Bounds(new Vector3(0, 1.5f, 2.5f), new Vector3(13.2f, 3f, 17.9f));
 
-        private readonly List<StageObject> placed = new List<StageObject>();
-        private readonly List<Object> assets = new List<Object>();
-        private readonly List<Light> lamps = new List<Light>();
-        private readonly List<GameObject> overhead = new List<GameObject>();
-        private readonly Material wallpaper;
-        private readonly Material carpet;
-        private readonly Material ceiling;
-        private readonly Material skirting;
-        private readonly Material metal;
-        private readonly Material dark;
-        private readonly Material doorPaint;
-        private readonly Material lampGlow;
-        private readonly Material paper;
-        private readonly Material oxidized;
-        private readonly Material greenGlow;
-        private readonly TMP_FontAsset font;
+        private readonly FieldRoot field;
         private readonly AnomalyCatalog anomalyDefinitions;
-        private NavMeshSurface surface;
-        private float lightClock;
+        private readonly List<StageObject> placed = new List<StageObject>();
 
-        public GameObject Root { get; private set; }
+        public GameObject Root => field.gameObject;
         public ObjectCatalog Catalog { get; }
         public int PlacedAnomalyCount { get; private set; }
         public IReadOnlyList<StageObject> PlacedObjects => placed;
-        public DoorTarget ForwardDoor { get; private set; }
-        public DoorTarget BackDoor { get; private set; }
-        public NavMeshSurface NavigationSurface => surface;
+        public DoorTarget ForwardDoor => field.ForwardDoor;
+        public DoorTarget BackDoor => field.BackDoor;
 
-        public WorldBuilder(AnomalyCatalog definitions = null)
+        public WorldBuilder(FieldRoot field, AnomalyCatalog definitions)
         {
-            Catalog = new ObjectCatalog();
-            font = Resources.Load<TMP_FontAsset>(GameConstants.FontResource);
+            if (field == null) throw new ArgumentNullException(nameof(field));
+            this.field = field;
             anomalyDefinitions = definitions;
-            if (anomalyDefinitions == null)
-            {
-                var json = Resources.Load<TextAsset>(GameConstants.DefinitionsResource);
-                if (json != null) anomalyDefinitions = AnomalyCatalog.FromJson(json.text);
-            }
-            wallpaper = MakeMaterial("Nicotine wallpaper", new Color(.74f, .69f, .43f), .02f, MakeWallpaper());
-            carpet = MakeMaterial("Stained carpet", new Color(.60f, .55f, .36f), 0, MakeCarpet());
-            ceiling = MakeMaterial("Acoustic ceiling", new Color(.72f, .70f, .56f), .02f, MakeCeiling());
-            skirting = MakeMaterial("Brown baseboard", new Color(.25f, .215f, .13f), .09f);
-            metal = MakeMaterial("Aged fixtures", new Color(.39f, .39f, .33f), .31f);
-            dark = MakeMaterial("Unlit recess", new Color(.018f, .019f, .014f), .01f);
-            doorPaint = MakeMaterial("Chipped dark enamel", new Color(.20f, .23f, .19f), .19f);
-            paper = MakeMaterial("Faded notices", new Color(.76f, .71f, .49f));
-            oxidized = MakeMaterial("Oxidized pipe", new Color(.29f, .22f, .12f), .16f);
-            lampGlow = MakeMaterial("Fluorescent phosphor", new Color(.90f, .95f, .76f), .3f);
-            SetEmission(lampGlow, new Color(.88f, 1f, .68f) * 3.5f);
-            greenGlow = MakeMaterial("Exit glass", new Color(.10f, .27f, .20f), .15f);
-            SetEmission(greenGlow, new Color(.15f, .55f, .27f) * 1.1f);
+            Catalog = new ObjectCatalog();
         }
 
-        public GameObject Build(StageData stage, bool includeAnomalies, int maxAnomalies, bool editing = false)
+        public void Build(StageData stage, bool includeAnomalies, int maxAnomalies, bool editing = false)
         {
             Clear();
-            Root = new GameObject("Round world " + (stage == null ? "empty" : stage.sceneId.ToString()));
-            var architecture = Child("Architecture", Root.transform);
-            var decoration = Child("Ordinary surroundings", Root.transform);
-            var objects = Child("Stage placements", Root.transform);
-            BuildShell(architecture);
-            BuildDetails(decoration);
-            BackDoor = BuildDoor(BackDoorPosition, false, architecture);
-            ForwardDoor = BuildDoor(ForwardDoorPosition, true, architecture);
-            BuildLighting(architecture);
-            ConfigureAtmosphere();
+            FieldRoot.ApplyAtmosphere();
 
             int chasing = 0;
             if (stage != null && stage.items != null)
@@ -95,7 +47,7 @@ namespace Door666.Runtime
                     var definition = anomalyDefinitions == null ? null : anomalyDefinitions.FindByPrefab(item.prefabId);
                     bool pursuit = definition != null && definition.IsThreat;
                     if (!editing && item.isAnomaly && pursuit && chasing > 0) continue;
-                    var instance = Catalog.Create(item, objects);
+                    var instance = Catalog.Create(item, field.Placements);
                     if (instance == null) continue;
                     placed.Add(instance);
                     if (item.isAnomaly)
@@ -106,181 +58,13 @@ namespace Door666.Runtime
                 }
             }
 
-            if (editing)
-            {
-                SetEditingView(true);
-                return Root;
-            }
-            Physics.SyncTransforms();
-            surface = Root.AddComponent<NavMeshSurface>();
-            surface.collectObjects = CollectObjects.Children;
-            surface.useGeometry = NavMeshCollectGeometry.PhysicsColliders;
-            surface.overrideVoxelSize = true;
-            surface.voxelSize = .10f;
-            surface.minRegionArea = .1f;
-            surface.BuildNavMesh();
-            return Root;
-        }
-
-        private void BuildShell(Transform parent)
-        {
-            Box("Carpet floor", parent, new Vector3(0, -.12f, 2.5f), new Vector3(14, .24f, 19), carpet, true, new Vector2(7, 9.5f));
-            overhead.Add(Box("Low acoustic ceiling", parent, new Vector3(0, 3.37f, 2.5f), new Vector3(14, .18f, 19), ceiling, true, new Vector2(7, 9.5f)));
-            Wall("Left perimeter", parent, new Vector3(-7, 1.65f, 2.5f), new Vector3(.25f, 3.3f, 19));
-            Wall("Right perimeter", parent, new Vector3(7, 1.65f, 2.5f), new Vector3(.25f, 3.3f, 19));
-            Wall("Entrance wall left", parent, new Vector3(-4, 1.65f, -7), new Vector3(6, 3.3f, .25f));
-            Wall("Entrance wall right", parent, new Vector3(4, 1.65f, -7), new Vector3(6, 3.3f, .25f));
-            Wall("Exit wall left", parent, new Vector3(-4, 1.65f, 12), new Vector3(6, 3.3f, .25f));
-            Wall("Exit wall right", parent, new Vector3(4, 1.65f, 12), new Vector3(6, 3.3f, .25f));
-            Box("Entrance lintel", parent, new Vector3(0, 3f, -7), new Vector3(2, .6f, .25f), wallpaper, true);
-            Box("Exit lintel", parent, new Vector3(0, 3f, 12), new Vector3(2, .6f, .25f), wallpaper, true);
-
-            // All old coordinates fit the open central inspection area. Side bays suggest a larger maze.
-            foreach (float side in new[] { -1f, 1f })
-            {
-                Wall("Entry return wall", parent, new Vector3(side * 4.95f, 1.65f, -3.25f), new Vector3(4.1f, 3.3f, .30f));
-                Wall("Side bay return", parent, new Vector3(side * 5.25f, 1.65f, 4.9f), new Vector3(3.5f, 3.3f, .32f));
-                Wall("Exit approach wall", parent, new Vector3(side * 4.65f, 1.65f, 9.15f), new Vector3(4.7f, 3.3f, .32f));
-                Wall("Column A", parent, new Vector3(side * 3.85f, 1.65f, .5f), new Vector3(.76f, 3.3f, .82f));
-                Wall("Column B", parent, new Vector3(side * 3.85f, 1.65f, 6.9f), new Vector3(.76f, 3.3f, .82f));
-                Box("Deep shadow in service bay", parent, new Vector3(side * 6.845f, 1.26f, 7.1f), new Vector3(.025f, 2.35f, 1.7f), dark);
-                Box("Service recess header", parent, new Vector3(side * 6.78f, 2.5f, 7.1f), new Vector3(.15f, .1f, 1.9f), skirting);
-                for (int end = -1; end <= 1; end += 2)
-                    Box("Service recess frame", parent, new Vector3(side * 6.78f, 1.26f, 7.1f + end * .92f), new Vector3(.15f, 2.45f, .1f), skirting);
-            }
-
-            // Ceiling grid has a real silhouette even at oblique first-person angles.
-            for (float x = -7; x <= 7; x += 2)
-                overhead.Add(Box("Ceiling tee long", parent, new Vector3(x, 3.268f, 2.5f), new Vector3(.027f, .025f, 19), metal));
-            for (float z = -7; z <= 12; z += 2)
-                overhead.Add(Box("Ceiling tee cross", parent, new Vector3(0, 3.267f, z), new Vector3(14, .025f, .027f), metal));
-        }
-
-        private void BuildDetails(Transform parent)
-        {
-            foreach (float side in new[] { -1f, 1f })
-            {
-                Cylinder("Exposed service pipe", parent, new Vector3(side * 6.77f, 3.06f, 2.5f), new Vector3(.065f, 9f, .065f), oxidized, new Vector3(90, 0, 0));
-                for (int i = 0; i < 5; i++)
-                    Box("Pipe hanger", parent, new Vector3(side * 6.77f, 3.18f, -5f + 3.6f * i), new Vector3(.1f, .22f, .1f), metal);
-            }
-
-            // Ordinary furniture uses the same catalog and never receives an anomaly component.
-            PlaceOrdinary("ChairPrefab", new Vector3(-5.8f, .5f, .5f), 100, parent);
-            PlaceOrdinary("ChairPrefab", new Vector3(-5.7f, .5f, 1.55f), 91, parent);
-            PlaceOrdinary("changeColorBox", new Vector3(5.9f, .5f, -.9f), -5, parent);
-            PlaceOrdinary("changeColorBox", new Vector3(6.05f, .5f, .25f), 12, parent);
-            PlaceOrdinary("DollPrefab", new Vector3(-5.9f, .5f, 7.6f), 125, parent);
-            PlaceOrdinary("bears", new Vector3(5.9f, .5f, 7.7f), 240, parent);
-            PlaceOrdinary("ChairPrefab", new Vector3(4.8f, .5f, 10.45f), 193, parent);
-
-            Box("Notice board frame", parent, new Vector3(-6.83f, 1.78f, -1.15f), new Vector3(.12f, .92f, 1.45f), skirting);
-            Box("Notice board backing", parent, new Vector3(-6.755f, 1.78f, -1.15f), new Vector3(.03f, .80f, 1.33f), paper);
-            var notice = Child("Old instructions", parent);
-            notice.position = new Vector3(-6.727f, 1.78f, -1.15f);
-            notice.rotation = Quaternion.Euler(0, -90, 0);
-            Label("施設管理室\n\n扉は静かに閉めてください\n私物を残さないでください", notice, Vector3.zero, 1.13f, .69f, .078f, new Color(.22f, .21f, .16f));
-
-            for (int i = 0; i < 5; i++)
-            {
-                Box("Abandoned paper", parent, new Vector3(5.2f + i * .19f, .007f, 2.7f + i * .31f), new Vector3(.22f, .007f, .30f), paper).transform.localRotation = Quaternion.Euler(0, i * 27, 0);
-            }
-            for (int i = 0; i < 4; i++)
-                Box("Vent slat", parent, new Vector3(6.843f, 2.65f + .042f * i, 2.55f), new Vector3(.035f, .019f, .70f), metal);
-            Box("Service cabinet", parent, new Vector3(-6.62f, .85f, 10.45f), new Vector3(.48f, 1.70f, .85f), doorPaint, true);
-            Box("Cabinet handle", parent, new Vector3(-6.355f, .95f, 10.15f), new Vector3(.03f, .19f, .026f), metal);
-            var sign = Child("Room marker", parent);
-            sign.position = new Vector3(2.65f, 1.78f, 8.97f);
-            Label("666\n区画", sign, Vector3.zero, .48f, .68f, .16f, new Color(.30f, .29f, .20f));
-        }
-
-        private void PlaceOrdinary(string id, Vector3 position, float rotation, Transform parent)
-        {
-            Catalog.Create(new StageItem
-            {
-                prefabId = id,
-                position = new Float3 { x = position.x, y = position.y, z = position.z },
-                rotation = new Float3 { x = 0, y = rotation, z = 0 },
-                isAnomaly = false
-            }, parent);
-        }
-
-        private DoorTarget BuildDoor(Vector3 position, bool isForward, Transform parent)
-        {
-            var root = Child(isForward ? "Forward decision door" : "Retreat decision door", parent);
-            root.position = position;
-            root.rotation = Quaternion.Euler(0, isForward ? 0 : 180, 0);
-            var target = root.gameObject.AddComponent<DoorTarget>();
-            target.IsForward = isForward;
-            var collider = root.gameObject.AddComponent<BoxCollider>();
-            collider.center = new Vector3(0, 1.28f, 0);
-            collider.size = new Vector3(1.94f, 2.56f, .22f);
-            Box("Dark jamb", root, new Vector3(0, 1.29f, .035f), new Vector3(2.05f, 2.65f, .12f), dark);
-            Box("Door leaf", root, new Vector3(0, 1.255f, -.035f), new Vector3(1.76f, 2.48f, .10f), doorPaint);
-            Box("Upper inset", root, new Vector3(0, 1.75f, -.091f), new Vector3(1.38f, .72f, .016f), skirting);
-            Box("Upper painted panel", root, new Vector3(0, 1.75f, -.104f), new Vector3(1.31f, .65f, .012f), doorPaint);
-            Box("Kick plate", root, new Vector3(0, .18f, -.102f), new Vector3(1.72f, .31f, .013f), metal);
-            for (int side = -1; side <= 1; side += 2)
-                Box("Door frame", root, new Vector3(side * .985f, 1.32f, -.09f), new Vector3(.12f, 2.64f, .17f), skirting);
-            Box("Door header", root, new Vector3(0, 2.59f, -.09f), new Vector3(2.08f, .13f, .17f), skirting);
-            Box("Latch plate", root, new Vector3(.65f, 1.12f, -.108f), new Vector3(.10f, .22f, .015f), metal);
-            Box("Door handle", root, new Vector3(.57f, 1.15f, -.152f), new Vector3(.24f, .035f, .065f), metal);
-            Box("Room number plaque", root, new Vector3(0, 2.05f, -.121f), new Vector3(.63f, .28f, .02f), paper);
-            Label("666", root, new Vector3(0, 2.05f, -.137f), .59f, .23f, .19f, new Color(.19f, .18f, .12f));
-            Box("Direction plaque", root, new Vector3(0, 2.96f, -.015f), new Vector3(1.34f, .41f, .07f), greenGlow);
-            Label(isForward ? "前進  ↑" : "後退  ↓", root, new Vector3(0, 2.96f, -.057f), 1.25f, .33f, .155f, new Color(.79f, .87f, .68f));
-            Label(isForward ? "先へ進む" : "引き返す", root, new Vector3(0, 1.48f, -.118f), 1.25f, .30f, .15f, new Color(.68f, .69f, .55f));
-            return target;
-        }
-
-        private void BuildLighting(Transform parent)
-        {
-            var positions = new[]
-            {
-                new Vector3(0, 3.12f, -4.6f), new Vector3(0, 3.12f, -.8f),
-                new Vector3(0, 3.12f, 3.0f), new Vector3(0, 3.12f, 7.1f),
-                new Vector3(0, 3.12f, 10.5f), new Vector3(-5.15f, 3.12f, .5f),
-                new Vector3(5.15f, 3.12f, .5f), new Vector3(-5.15f, 3.12f, 7.1f)
-            };
-            for (int i = 0; i < positions.Length; i++)
-            {
-                var fixture = Child("Fluorescent " + (i + 1), parent);
-                overhead.Add(fixture.gameObject);
-                fixture.position = positions[i];
-                Box("Metal tray", fixture, Vector3.zero, new Vector3(.48f, .09f, 1.35f), metal);
-                Box("Reflector", fixture, new Vector3(0, -.055f, 0), new Vector3(.39f, .025f, 1.22f), paper);
-                for (int tube = -1; tube <= 1; tube += 2)
-                    Cylinder("Fluorescent tube", fixture, new Vector3(tube * .112f, -.095f, 0), new Vector3(.045f, .57f, .045f), lampGlow, new Vector3(90, 0, 0));
-                var emitter = Child("Light", fixture);
-                emitter.localPosition = new Vector3(0, -.18f, 0);
-                emitter.localRotation = Quaternion.Euler(90, 0, 0);
-                var light = emitter.gameObject.AddComponent<Light>();
-                light.type = LightType.Point;
-                light.color = new Color(.97f, 1f, .72f);
-                light.intensity = i >= 5 ? 1.20f : 1.65f;
-                light.range = 6.7f;
-                light.shadows = i == 2 || i == 3 ? LightShadows.Soft : LightShadows.None;
-                light.shadowStrength = .83f;
-                light.shadowBias = .025f;
-                light.shadowNormalBias = .12f;
-                lamps.Add(light);
-            }
-        }
-
-        public void Tick(float deltaTime)
-        {
-            lightClock += Mathf.Max(0, deltaTime);
-            // Only the remote service bay flickers; the player route stays legible.
-            if (lamps.Count > 7 && lamps[7] != null)
-            {
-                float phase = lightClock % 17.9f;
-                lamps[7].intensity = phase > 16.9f && phase < 17.28f ? .12f : 1.2f;
-            }
+            SetEditingView(editing);
+            if (!editing) RebuildNavigation();
         }
 
         public void SetEditingView(bool editing)
         {
-            foreach (var item in overhead)
+            foreach (var item in field.Overhead)
             {
                 if (item == null) continue;
                 foreach (var renderer in item.GetComponentsInChildren<Renderer>()) renderer.enabled = !editing;
@@ -288,174 +72,9 @@ namespace Door666.Runtime
             }
         }
 
-        private static void ConfigureAtmosphere()
-        {
-            RenderSettings.skybox = null;
-            RenderSettings.ambientMode = AmbientMode.Trilight;
-            RenderSettings.ambientSkyColor = new Color(.21f, .23f, .16f);
-            RenderSettings.ambientEquatorColor = new Color(.11f, .12f, .076f);
-            RenderSettings.ambientGroundColor = new Color(.048f, .041f, .026f);
-            RenderSettings.ambientIntensity = 1f;
-            RenderSettings.reflectionIntensity = .18f;
-            RenderSettings.fog = true;
-            RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogColor = new Color(.075f, .082f, .055f);
-            RenderSettings.fogDensity = .024f;
-        }
-
-        private void Wall(string name, Transform parent, Vector3 position, Vector3 scale)
-        {
-            Box(name, parent, position, scale, wallpaper, true, new Vector2(Mathf.Max(scale.x, scale.z) * .65f, scale.y * .55f));
-            Box(name + " baseboard", parent, new Vector3(position.x, .09f, position.z), new Vector3(scale.x + .045f, .18f, scale.z + .045f), skirting);
-            Box(name + " cornice", parent, new Vector3(position.x, 3.18f, position.z), new Vector3(scale.x + .045f, .085f, scale.z + .045f), ceiling);
-        }
-
-        private void Label(string text, Transform parent, Vector3 position, float width, float height, float size, Color color)
-        {
-            var root = Child("Lettering", parent);
-            root.localPosition = position;
-            var label = root.gameObject.AddComponent<TextMeshPro>();
-            if (font != null) label.font = font;
-            label.text = text;
-            label.fontSize = size * 10;
-            label.alignment = TextAlignmentOptions.Center;
-            label.color = color;
-            label.rectTransform.sizeDelta = new Vector2(width, height);
-            label.textWrappingMode = TextWrappingModes.NoWrap;
-            label.overflowMode = TextOverflowModes.Overflow;
-            label.renderer.shadowCastingMode = ShadowCastingMode.Off;
-            label.renderer.receiveShadows = false;
-        }
-
-        private GameObject Box(string name, Transform parent, Vector3 position, Vector3 scale, Material material, bool solid = false, Vector2? tiling = null)
-        {
-            var go = Primitive(name, PrimitiveType.Cube, parent, position, scale, material, solid);
-            if (tiling.HasValue)
-            {
-                // Per-object UV density without cloning a material for every wall segment.
-                var properties = new MaterialPropertyBlock();
-                properties.SetVector("_BaseMap_ST", new Vector4(tiling.Value.x, tiling.Value.y, 0, 0));
-                properties.SetVector("_MainTex_ST", new Vector4(tiling.Value.x, tiling.Value.y, 0, 0));
-                go.GetComponent<Renderer>().SetPropertyBlock(properties);
-            }
-            return go;
-        }
-
-        private GameObject Cylinder(string name, Transform parent, Vector3 position, Vector3 scale, Material material, Vector3 rotation)
-        {
-            var go = Primitive(name, PrimitiveType.Cylinder, parent, position, scale, material, false);
-            go.transform.localRotation = Quaternion.Euler(rotation);
-            return go;
-        }
-
-        private static GameObject Primitive(string name, PrimitiveType type, Transform parent, Vector3 position, Vector3 scale, Material material, bool solid)
-        {
-            var go = GameObject.CreatePrimitive(type);
-            go.name = name;
-            go.transform.SetParent(parent, false);
-            go.transform.localPosition = position;
-            go.transform.localScale = scale;
-            go.GetComponent<Renderer>().sharedMaterial = material;
-            if (!solid)
-            {
-                var collider = go.GetComponent<Collider>();
-                collider.enabled = false;
-                ObjectCatalog.DestroyObject(collider);
-            }
-            return go;
-        }
-
-        private static Transform Child(string name, Transform parent)
-        {
-            var child = new GameObject(name).transform;
-            child.SetParent(parent, false);
-            return child;
-        }
-
-        private Material MakeMaterial(string name, Color color, float smoothness = .02f, Texture2D texture = null)
-        {
-            var shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null) shader = Shader.Find("Standard");
-            var material = new Material(shader) { name = name, color = color };
-            if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
-            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", smoothness);
-            if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", smoothness);
-            if (texture != null)
-            {
-                material.mainTexture = texture;
-                if (material.HasProperty("_BaseMap")) material.SetTexture("_BaseMap", texture);
-            }
-            assets.Add(material);
-            return material;
-        }
-
-        private static void SetEmission(Material material, Color color)
-        {
-            material.EnableKeyword("_EMISSION");
-            material.SetColor("_EmissionColor", color);
-        }
-
-        private Texture2D MakeWallpaper()
-        {
-            return Texture("Water-stained wallpaper", 128, (x, y) =>
-            {
-                float noise = Noise(x, y) * .11f;
-                float stripe = x % 16 < 2 ? -.08f : .02f;
-                float motif = Mathf.Abs(Mathf.Sin(x * Mathf.PI / 16)) * Mathf.Abs(Mathf.Sin(y * Mathf.PI / 24));
-                float stain = Mathf.PerlinNoise(x * .043f + 17f, y * .035f + 43f);
-                float value = .77f + noise + stripe - (stain > .57f ? (stain - .57f) * .62f : 0);
-                if (motif > .81f && motif < .94f) value -= .12f;
-                return new Color(value, value * .98f, value * .87f, 1);
-            });
-        }
-
-        private Texture2D MakeCarpet()
-        {
-            return Texture("Matted woven carpet", 128, (x, y) =>
-            {
-                float weave = ((x + y) % 2 == 0 ? .07f : -.035f) + Noise(x, y) * .18f;
-                float stain = Mathf.PerlinNoise(x * .029f + 10, y * .029f + 28);
-                float value = .61f + weave - Mathf.Max(0, stain - .47f) * .62f;
-                float seam = x == 0 || y == 0 ? .96f : 1f;
-                return new Color(value * seam, value * .97f * seam, value * .83f * seam, 1);
-            });
-        }
-
-        private Texture2D MakeCeiling()
-        {
-            return Texture("Acoustic tile speckle", 64, (x, y) =>
-            {
-                float value = .79f + Noise(x, y) * .12f;
-                if (Noise(x + 33, y + 27) < .09f) value -= .17f;
-                if (x == 0 || y == 0) value *= .80f;
-                return new Color(value, value, value * .94f, 1);
-            });
-        }
-
-        private Texture2D Texture(string name, int size, Func<int, int, Color> sample)
-        {
-            var texture = new Texture2D(size, size, TextureFormat.RGB24, true) { name = name, wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Trilinear, anisoLevel = 4 };
-            var pixels = new Color[size * size];
-            for (int y = 0; y < size; y++)
-                for (int x = 0; x < size; x++) pixels[y * size + x] = sample(x, y);
-            texture.SetPixels(pixels);
-            texture.Apply(true, true);
-            assets.Add(texture);
-            return texture;
-        }
-
-        private static float Noise(int x, int y)
-        {
-            unchecked
-            {
-                uint hash = (uint)(x * 374761393 + y * 668265263 + 666);
-                hash = (hash ^ (hash >> 13)) * 1274126177;
-                return (hash & 65535) / 65535f;
-            }
-        }
-
         public void RebuildNavigation()
         {
+            var surface = field.Navigation;
             if (surface == null) return;
             Physics.SyncTransforms();
             var previousData = surface.navMeshData;
@@ -465,33 +84,27 @@ namespace Door666.Runtime
 
         public void Clear()
         {
-            if (surface != null)
+            if (field != null && field.Placements != null)
             {
-                surface.RemoveData();
-                if (surface.navMeshData != null) ObjectCatalog.DestroyObject(surface.navMeshData);
-                surface = null;
-            }
-            if (Root != null)
-            {
-                Root.SetActive(false);
-                ObjectCatalog.DestroyObject(Root);
-                Root = null;
+                for (int i = field.Placements.childCount - 1; i >= 0; i--)
+                {
+                    var child = field.Placements.GetChild(i).gameObject;
+                    // Deactivate first so old colliders leave physics before the deferred destroy.
+                    child.SetActive(false);
+                    ObjectCatalog.DestroyObject(child);
+                }
             }
             placed.Clear();
-            lamps.Clear();
-            overhead.Clear();
             PlacedAnomalyCount = 0;
-            ForwardDoor = null;
-            BackDoor = null;
-            lightClock = 0;
         }
 
         public void Dispose()
         {
             Clear();
-            Catalog.Dispose();
-            foreach (var asset in assets) if (asset != null) ObjectCatalog.DestroyObject(asset);
-            assets.Clear();
+            if (field == null || field.Navigation == null) return;
+            var data = field.Navigation.navMeshData;
+            field.Navigation.RemoveData();
+            if (data != null) ObjectCatalog.DestroyObject(data);
         }
     }
 }

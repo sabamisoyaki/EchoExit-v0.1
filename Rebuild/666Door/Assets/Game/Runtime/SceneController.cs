@@ -1,0 +1,126 @@
+using System.Collections;
+using Door666.Core;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+
+namespace Door666.Runtime
+{
+    public enum GameScreen { Title, Playing, Paused, Judging, Editing, Ending, Error }
+
+    /// <summary>
+    /// Entry point of one screen scene (Title / Game / EditMode). Services are created per scene and nothing is carried
+    /// across a scene change: settings and stages are reloaded, and run state lives only in the Game scene.
+    /// </summary>
+    public abstract class SceneController : MonoBehaviour
+    {
+        public GameScreen Screen { get; protected set; }
+        /// <summary>True once the field scene is loaded and the screen has been entered.</summary>
+        public bool IsReady { get; private set; }
+        public GameSettings Settings { get; private set; }
+        public PlayerInputReader Input { get; private set; }
+        public FirstPersonRig Player { get; private set; }
+        public GameUI UI { get; private set; }
+        public WorldBuilder World { get; private set; }
+        public StageRepository Repository { get; private set; }
+        public AnomalyCatalog Definitions { get; private set; }
+        public bool SubtitlesEnabled { get; set; }
+
+        private StageLoadResult loadedStages;
+        private AudioClip ambienceClip;
+
+        protected virtual void Awake()
+        {
+            Settings = Resources.Load<GameSettings>(GameConstants.SettingsResource);
+            if (Settings == null) Settings = ScriptableObject.CreateInstance<GameSettings>();
+            Definitions = AnomalyCatalog.FromJson(Resources.Load<TextAsset>(GameConstants.DefinitionsResource).text);
+            Input = new PlayerInputReader();
+            Player = new GameObject("Player", typeof(CharacterController)).AddComponent<FirstPersonRig>();
+            SceneManager.MoveGameObjectToScene(Player.gameObject, gameObject.scene);
+            Player.Initialize();
+            var ui = new GameObject("Interface", typeof(RectTransform));
+            SceneManager.MoveGameObjectToScene(ui, gameObject.scene);
+            UI = ui.AddComponent<GameUI>();
+            UI.Initialize(this);
+            Repository = new StageRepository(Application.persistentDataPath);
+            SubtitlesEnabled = PlayerPrefs.GetInt(GameConstants.SubtitlePreference, 1) != 0;
+            loadedStages = Repository.LoadOrCreate(Resources.Load<TextAsset>(GameConstants.DefaultStagesResource).text);
+            foreach (string warning in loadedStages.Warnings) Debug.LogWarning(warning);
+            CreateAmbience();
+        }
+
+        private IEnumerator Start()
+        {
+            yield return FieldRoot.EnsureLoaded();
+            var field = FindFirstObjectByType<FieldRoot>();
+            if (field == null)
+                ShowError("部屋のシーン「" + GameConstants.FieldScene + "」を読み込めませんでした。");
+            else
+            {
+                World = new WorldBuilder(field, Definitions);
+                if (loadedStages.Success) Enter();
+                else ShowError(loadedStages.Error + "\n既存ファイルは変更していません。\n" + Repository.SavePath);
+            }
+            IsReady = true;
+        }
+
+        /// <summary>Called once the shared field is available.</summary>
+        protected abstract void Enter();
+
+        public virtual void ShowTitle() => LoadScreen(GameConstants.TitleScene);
+        public virtual void StartRun() => LoadScreen(GameConstants.GameScene);
+        public virtual void StartEditor() => LoadScreen(GameConstants.EditModeScene);
+        public virtual void Resume() { }
+
+        public void Quit()
+        {
+            PlayerPrefs.Save();
+            Application.Quit();
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+#endif
+        }
+
+        protected void ShowError(string message)
+        {
+            Screen = GameScreen.Error;
+            SetCursor(true);
+            UI.ShowError(message);
+        }
+
+        // A single-mode load also unloads the additive field, so the next screen starts from a clean room.
+        private static void LoadScreen(string scene) => SceneManager.LoadScene(scene, LoadSceneMode.Single);
+
+        protected static void SetCursor(bool free)
+        {
+            Cursor.lockState = free ? CursorLockMode.None : CursorLockMode.Locked;
+            Cursor.visible = free;
+        }
+
+        protected virtual void OnDestroy()
+        {
+            if (Input != null) Input.Dispose();
+            if (World != null) World.Dispose();
+            if (ambienceClip != null) Destroy(ambienceClip);
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+        }
+
+        private void CreateAmbience()
+        {
+            const int rate = 22050;
+            var samples = new float[rate * 2];
+            for (int i = 0; i < samples.Length; i++)
+            {
+                float t = (float)i / rate;
+                samples[i] = (Mathf.Sin(2 * Mathf.PI * 50 * t) + Mathf.Sin(2 * Mathf.PI * 100 * t) * .25f) * .045f;
+            }
+            ambienceClip = AudioClip.Create("Fluorescent ballast", samples.Length, 1, rate, false);
+            ambienceClip.SetData(samples, 0);
+            var ambience = gameObject.AddComponent<AudioSource>();
+            ambience.clip = ambienceClip;
+            ambience.loop = true;
+            ambience.volume = .4f;
+            ambience.Play();
+        }
+    }
+}

@@ -8,7 +8,18 @@ Unity 6000.3.10f1 / Windows / 日本語。
 
 ビルド済みの場合は `Builds/Windows/666Door.exe` を実行します。
 
-Unityで開く場合は `Assets/Scenes/666Door.unity` を開いて再生します。シーンや生成アセットがない初回チェックアウトでは、メニューの **666号扉 → プロジェクトを初期化** を実行してください。シーン、URP、日本語フォント、熊の見た目プレハブをEditor APIで生成します。
+Unityで開く場合は `Assets/Scenes/Title.unity` を開いて再生します。シーンや生成アセットがない初回チェックアウトでは、メニューの **666号扉 → プロジェクトを初期化** を実行してください。足りないシーン、URP、日本語フォント、熊の見た目プレハブ、マテリアルをEditor APIで生成します（既にあるシーンは上書きしません）。
+
+### シーン構成
+
+| シーン | 役割 |
+| --- | --- |
+| `Title.unity` | タイトル画面。起動シーン |
+| `Game.unity` | 探索とラウンド進行。やり直しはシーン内で行う |
+| `EditMode.unity` | 部屋の編集 |
+| `Field.unity` | 部屋の建物・照明・扉・固定の家具。上の3シーンが追加読込する |
+
+画面の移動はシーンの切り替え、ラウンドの交代は `Field` の `Stage placements` の下だけを作り直します。エディタで Title / Game / EditMode を開くと `Field` も自動で追加表示されるので、部屋はシーン上で直接編集できます。コードから部屋を作り直したいときは **666号扉 → 部屋シーンを作り直す（上書き）** を使います（手作業の変更は失われます）。
 
 ## 遊び方
 
@@ -35,7 +46,9 @@ Unityで開く場合は `Assets/Scenes/666Door.unity` を開いて再生しま�
 ## 構成と調整
 
 - `Assets/Game/Core`：Unityに依存しないステージ入出力、抽選、ラン状態、儀式、捕獲猶予。
-- `Assets/Game/Runtime`：一人称操作、知覚、ワールド生成、異変演出、UI、配置編集。
+- `Assets/Game/Runtime`：シーンごとのコントローラー、一人称操作、知覚、配置物の生成、異変演出、UI、配置編集。
+- `Assets/Game/Editor`：初期化、部屋シーンの生成、エディタ上での Field 自動表示。
+- `Assets/Field`：部屋シーン用のマテリアルとテクスチャ。
 - `Assets/Resources/AnomalyDefinitions.json`：7種類の異変定義。配置JSONから儀式・危険度を分離。
 - `Assets/Resources/GameSettings.asset`：ラウンド時間、異変数上限などの調整。
 - `Assets/Resources/PlayerControls.inputactions`：Input Systemのみを使用する操作定義。

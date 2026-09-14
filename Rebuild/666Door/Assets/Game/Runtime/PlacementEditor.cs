@@ -15,7 +15,7 @@ namespace Door666.Runtime
         private static readonly Vector2 PlanSize = new Vector2(15.4f, 20.4f);
         private static readonly Vector3 PlanCenter = new Vector3(0, 0, 2.5f);
 
-        private readonly SessionCoordinator game;
+        private readonly SceneController game;
         private readonly Dictionary<string, StageDefinitionMetadata> metadata = new Dictionary<string, StageDefinitionMetadata>(StringComparer.Ordinal);
         private readonly Dictionary<string, float> anchorHeights = new Dictionary<string, float>(StringComparer.Ordinal);
         private readonly List<StageObject> unknownMarkers = new List<StageObject>();
@@ -44,7 +44,11 @@ namespace Door666.Runtime
         public int CurrentSceneId => draft == null ? 0 : draft.sceneId;
         public bool HasUnsavedChanges => dirty;
 
-        public PlacementEditor(SessionCoordinator owner) { game = owner ?? throw new ArgumentNullException(nameof(owner)); }
+        public PlacementEditor(SceneController owner)
+        {
+            if (owner == null) throw new ArgumentNullException(nameof(owner));
+            game = owner;
+        }
 
         public void Open()
         {
@@ -215,7 +219,7 @@ namespace Door666.Runtime
             draft = stage.Clone();
             dirty = false;
             RebuildDraft();
-            game.UI.ShowEditor(draft.sceneId, category);
+            game.UI.ShowEditor(this, draft.sceneId, category);
             int unknown = draft.items.Count(item => item != null && !game.World.Catalog.IsKnown(item.prefabId));
             game.UI.EditorMessage("ステージ " + draft.sceneId + " を読み込みました。"
                 + (unknown > 0 ? "\n未対応の配置物 " + unknown + " 個は橙色で表示し、保存データを保持します。" : "\n配置物を選ぶか、左の名前から追加できます。"));
@@ -229,7 +233,7 @@ namespace Door666.Runtime
             draft = new StageData { sceneId = StageRepository.NextSceneId(game.Repository.Data) };
             dirty = false;
             RebuildDraft();
-            game.UI.ShowEditor(draft.sceneId, category);
+            game.UI.ShowEditor(this, draft.sceneId, category);
             game.UI.EditorMessage("新しいステージ " + draft.sceneId + "。名前を選び、床をクリックして配置してください。");
         }
 
@@ -239,7 +243,7 @@ namespace Door666.Runtime
             category = anomaly;
             CancelPreview();
             int displayId = int.TryParse(game.UI.EditorSceneIdText, out int parsed) && parsed > 0 ? parsed : draft.sceneId;
-            game.UI.ShowEditor(displayId, category);
+            game.UI.ShowEditor(this, displayId, category);
             game.UI.EditorMessage(category ? "異変の名前を選んで配置してください。" : "通常オブジェクトの名前を選んで配置してください。");
             UpdateSelectionOutline();
         }
@@ -337,7 +341,7 @@ namespace Door666.Runtime
             if (!saved.Success) { game.UI.EditorMessage(saved.Error); return; }
             draft.sceneId = id;
             dirty = false;
-            game.UI.ShowEditor(id, category);
+            game.UI.ShowEditor(this, id, category);
             game.UI.EditorMessage("ステージ " + id + " を保存しました。"
                 + (result.Warnings.Count > 0 ? "\n" + string.Join("\n", result.Warnings.Take(2)) : ""));
         }

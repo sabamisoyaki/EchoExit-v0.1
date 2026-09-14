@@ -13,46 +13,49 @@ namespace Door666.Tests
         [UnityTest]
         public IEnumerator StageEditorNeverRendersMissingMaterials()
         {
-            EditorSceneManager.OpenScene(GameConstants.ScenePath, OpenSceneMode.Single);
+            EditorSceneManager.OpenScene(GameConstants.ScenePath(GameConstants.EditModeScene), OpenSceneMode.Single);
             yield return new EnterPlayMode();
-            yield return null;
-            var game = Object.FindFirstObjectByType<SessionCoordinator>();
+            EditModeSceneController editor = null;
+            for (int frame = 0; frame < SceneTestUtility.MaxLoadFrames && !SceneTestUtility.IsReady(out editor); frame++) yield return null;
+            Assert.That(editor != null && editor.IsReady, Is.True, "EditModeSceneController did not become ready.");
             var problems = new List<string>();
 
-            game.StartEditor();
-            yield return null;
             Collect(problems, "open");
             foreach (bool anomaly in new[] { false, true })
             {
-                game.StageEditor.SetCategory(anomaly);
-                foreach (string id in game.World.Catalog.PrefabIds)
+                editor.StageEditor.SetCategory(anomaly);
+                foreach (string id in editor.World.Catalog.PrefabIds)
                 {
-                    game.StageEditor.Choose(id);
+                    editor.StageEditor.Choose(id);
                     yield return null;
                     Collect(problems, (anomaly ? "anomaly " : "ordinary ") + id);
                 }
             }
-            foreach (var stage in game.Repository.Data.scenes)
+            foreach (var stage in editor.Repository.Data.scenes)
             {
                 if (stage == null) continue;
-                game.StageEditor.Load(stage.sceneId);
+                editor.StageEditor.Load(stage.sceneId);
                 yield return null;
                 Collect(problems, "stage " + stage.sceneId);
             }
-            game.StageEditor.New();
+            editor.StageEditor.New();
             yield return null;
             Collect(problems, "new stage");
 
             // Leaving and re-entering must not keep renderers that point at the previous session's guides.
-            game.ShowTitle();
-            yield return null;
+            editor.ShowTitle();
+            TitleSceneController title = null;
+            for (int frame = 0; frame < SceneTestUtility.MaxLoadFrames && !SceneTestUtility.IsReady(out title); frame++) yield return null;
+            Assert.That(title != null && title.IsReady, Is.True, "TitleSceneController did not become ready.");
             Collect(problems, "title after editor");
-            game.StartRun();
-            yield return null;
+            title.StartRun();
+            GameSceneController game = null;
+            for (int frame = 0; frame < SceneTestUtility.MaxLoadFrames && !SceneTestUtility.IsReady(out game); frame++) yield return null;
+            Assert.That(game != null && game.IsReady, Is.True, "GameSceneController did not become ready.");
             game.StartEditor();
-            yield return null;
+            for (int frame = 0; frame < SceneTestUtility.MaxLoadFrames && !SceneTestUtility.IsReady(out editor); frame++) yield return null;
+            Assert.That(editor != null && editor.IsReady, Is.True, "EditModeSceneController did not become ready.");
             Collect(problems, "editor after run");
-            game.ShowTitle();
             yield return new ExitPlayMode();
 
             Assert.That(problems, Is.Empty, string.Join("\n", problems));
