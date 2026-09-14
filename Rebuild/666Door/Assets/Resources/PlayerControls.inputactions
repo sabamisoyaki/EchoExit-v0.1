@@ -1,0 +1,158 @@
+{
+  "name": "PlayerControls",
+  "maps": [
+    {
+      "name": "Player",
+      "actions": [
+        {
+          "name": "Move",
+          "type": "Value",
+          "expectedControlType": "Vector2"
+        },
+        {
+          "name": "Look",
+          "type": "Value",
+          "expectedControlType": "Vector2"
+        },
+        {
+          "name": "Interact",
+          "type": "Button",
+          "expectedControlType": "Button"
+        },
+        {
+          "name": "Hit",
+          "type": "Button",
+          "expectedControlType": "Button"
+        },
+        {
+          "name": "Pause",
+          "type": "Button",
+          "expectedControlType": "Button"
+        },
+        {
+          "name": "Rotate",
+          "type": "Button",
+          "expectedControlType": "Button"
+        },
+        {
+          "name": "Delete",
+          "type": "Button",
+          "expectedControlType": "Button"
+        },
+        {
+          "name": "Save",
+          "type": "Button",
+          "expectedControlType": "Button"
+        }
+      ],
+      "bindings": [
+        {
+          "name": "WASD",
+          "path": "2DVector",
+          "action": "Move",
+          "isComposite": true
+        },
+        {
+          "name": "up",
+          "path": "<Keyboard>/w",
+          "action": "Move",
+          "isPartOfComposite": true
+        },
+        {
+          "name": "down",
+          "path": "<Keyboard>/s",
+          "action": "Move",
+          "isPartOfComposite": true
+        },
+        {
+          "name": "left",
+          "path": "<Keyboard>/a",
+          "action": "Move",
+          "isPartOfComposite": true
+        },
+        {
+          "name": "right",
+          "path": "<Keyboard>/d",
+          "action": "Move",
+          "isPartOfComposite": true
+        },
+        {
+          "name": "",
+          "path": "<Gamepad>/leftStick",
+          "action": "Move"
+        },
+        {
+          "name": "",
+          "path": "<Mouse>/delta",
+          "action": "Look"
+        },
+        {
+          "name": "",
+          "path": "<Gamepad>/rightStick",
+          "action": "Look"
+        },
+        {
+          "name": "",
+          "path": "<Keyboard>/e",
+          "action": "Interact"
+        },
+        {
+          "name": "",
+          "path": "<Gamepad>/buttonWest",
+          "action": "Interact"
+        },
+        {
+          "name": "",
+          "path": "<Mouse>/leftButton",
+          "action": "Hit"
+        },
+        {
+          "name": "",
+          "path": "<Gamepad>/rightTrigger",
+          "action": "Hit"
+        },
+        {
+          "name": "",
+          "path": "<Keyboard>/escape",
+          "action": "Pause"
+        },
+        {
+          "name": "",
+          "path": "<Gamepad>/start",
+          "action": "Pause"
+        },
+        {
+          "name": "",
+          "path": "<Keyboard>/r",
+          "action": "Rotate"
+        },
+        {
+          "name": "",
+          "path": "<Gamepad>/rightShoulder",
+          "action": "Rotate"
+        },
+        {
+          "name": "",
+          "path": "<Keyboard>/delete",
+          "action": "Delete"
+        },
+        {
+          "name": "",
+          "path": "<Gamepad>/buttonNorth",
+          "action": "Delete"
+        },
+        {
+          "name": "",
+          "path": "<Keyboard>/f5",
+          "action": "Save"
+        },
+        {
+          "name": "",
+          "path": "<Gamepad>/select",
+          "action": "Save"
+        }
+      ]
+    }
+  ],
+  "controlSchemes": []
+}
