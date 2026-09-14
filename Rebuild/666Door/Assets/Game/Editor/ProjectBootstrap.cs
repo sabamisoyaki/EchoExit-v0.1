@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Reflection;
 using System.Text;
 using Door666.Runtime;
@@ -132,10 +133,7 @@ namespace Door666.Editor
         private static void ConfigureJapaneseFont()
         {
             if (!File.Exists("Assets/TextMesh Pro/Resources/TMP Settings.asset"))
-            {
-                TMP_PackageResourceImporter.ImportResources(true, false, false);
-                AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
-            }
+                ImportTextMeshProEssentials();
 
             var source = AssetDatabase.LoadAssetAtPath<Font>("Assets/Resources/Fonts/NotoSansJP.ttf");
             if (source == null) throw new InvalidOperationException("NotoSansJP.ttf が見つかりません。");
@@ -169,6 +167,67 @@ namespace Door666.Editor
             if (!TMP_Settings.fallbackFontAssets.Contains(font)) TMP_Settings.fallbackFontAssets.Add(font);
             EditorUtility.SetDirty(settings);
             AssetDatabase.SaveAssets();
+        }
+
+        // AssetDatabase.ImportPackage defers the import to a later editor tick, so -executeMethod exits first.
+        // Unpack the .unitypackage (a gzipped tar of guid/asset, guid/asset.meta, guid/pathname) synchronously instead.
+        private static void ImportTextMeshProEssentials()
+        {
+            var package = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(TMP_Settings).Assembly);
+            if (package == null) throw new InvalidOperationException("TextMesh Pro のパッケージが見つかりません。");
+            string archive = Path.Combine(package.resolvedPath, "Package Resources", "TMP Essential Resources.unitypackage");
+
+            var entries = new Dictionary<string, Dictionary<string, byte[]>>();
+            using (var gzip = new GZipStream(File.OpenRead(archive), CompressionMode.Decompress))
+            {
+                var header = new byte[512];
+                while (ReadBlock(gzip, header) && header[0] != 0)
+                {
+                    string name = ReadTarString(header, 345, 155) + ReadTarString(header, 0, 100);
+                    long size = Convert.ToInt64(ReadTarString(header, 124, 12).Trim(), 8);
+                    var data = new byte[size];
+                    if (!ReadBlock(gzip, data) || !ReadBlock(gzip, new byte[(512 - size % 512) % 512]))
+                        throw new EndOfStreamException(archive);
+                    if (header[156] != '0' && header[156] != 0) continue;
+
+                    if (name.StartsWith("./", StringComparison.Ordinal)) name = name.Substring(2);
+                    int slash = name.IndexOf('/');
+                    if (slash <= 0) continue;
+                    string guid = name.Substring(0, slash);
+                    if (!entries.TryGetValue(guid, out var files)) entries[guid] = files = new Dictionary<string, byte[]>();
+                    files[name.Substring(slash + 1)] = data;
+                }
+            }
+
+            foreach (var files in entries.Values)
+            {
+                if (!files.TryGetValue("pathname", out var pathBytes)) continue;
+                string assetPath = Encoding.UTF8.GetString(pathBytes).Split('\n')[0].Trim();
+                if (!assetPath.StartsWith("Assets/", StringComparison.Ordinal)) continue;
+                bool isFile = files.TryGetValue("asset", out var asset);
+                Directory.CreateDirectory(isFile ? Path.GetDirectoryName(assetPath) : assetPath);
+                if (isFile) File.WriteAllBytes(assetPath, asset);
+                if (files.TryGetValue("asset.meta", out var meta)) File.WriteAllBytes(assetPath + ".meta", meta);
+            }
+            AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+        }
+
+        private static bool ReadBlock(Stream stream, byte[] buffer)
+        {
+            int offset = 0;
+            while (offset < buffer.Length)
+            {
+                int read = stream.Read(buffer, offset, buffer.Length - offset);
+                if (read == 0) return false;
+                offset += read;
+            }
+            return true;
+        }
+
+        private static string ReadTarString(byte[] header, int offset, int length)
+        {
+            int end = Array.IndexOf(header, (byte)0, offset, length);
+            return Encoding.ASCII.GetString(header, offset, (end < 0 ? offset + length : end) - offset);
         }
 
         private static string CollectVisibleCharacters()
