@@ -32,7 +32,8 @@ namespace Door666.Runtime
             Catalog = new ObjectCatalog();
         }
 
-        public void Build(StageData stage, bool includeAnomalies, int maxAnomalies, bool editing = false)
+        /// <param name="enforceRoundRules">A round caps anomalies and allows one pursuer; the editor shows the stage exactly as authored.</param>
+        public void Build(StageData stage, bool includeAnomalies, int maxAnomalies, bool enforceRoundRules = true)
         {
             Clear();
             FieldRoot.ApplyAtmosphere();
@@ -43,33 +44,33 @@ namespace Door666.Runtime
                 foreach (var item in stage.items)
                 {
                     if (item == null) continue;
-                    if (item.isAnomaly && (!includeAnomalies || (!editing && PlacedAnomalyCount >= Mathf.Max(0, maxAnomalies)))) continue;
+                    if (item.isAnomaly && (!includeAnomalies || (enforceRoundRules && PlacedAnomalyCount >= Mathf.Max(0, maxAnomalies)))) continue;
                     var definition = anomalyDefinitions == null ? null : anomalyDefinitions.FindByPrefab(item.prefabId);
-                    bool pursuit = definition != null && definition.IsThreat;
-                    if (!editing && item.isAnomaly && pursuit && chasing > 0) continue;
-                    var instance = Catalog.Create(item, field.Placements);
-                    if (instance == null) continue;
-                    placed.Add(instance);
-                    if (item.isAnomaly)
-                    {
-                        PlacedAnomalyCount++;
-                        if (pursuit) chasing++;
-                    }
+                    bool pursuit = item.isAnomaly && definition != null && definition.IsThreat;
+                    if (enforceRoundRules && pursuit && chasing > 0) continue;
+                    if (Add(item) != null && pursuit) chasing++;
                 }
             }
-
-            SetEditingView(editing);
-            if (!editing) RebuildNavigation();
+            RebuildNavigation();
         }
 
-        public void SetEditingView(bool editing)
+        /// <summary>Creates one item under the field's placements. Call <see cref="RebuildNavigation"/> after changing the layout.</summary>
+        public StageObject Add(StageItem item)
         {
-            foreach (var item in field.Overhead)
-            {
-                if (item == null) continue;
-                foreach (var renderer in item.GetComponentsInChildren<Renderer>()) renderer.enabled = !editing;
-                foreach (var collider in item.GetComponentsInChildren<Collider>()) collider.enabled = !editing;
-            }
+            var instance = Catalog.Create(item, field.Placements);
+            if (instance == null) return null;
+            placed.Add(instance);
+            if (item.isAnomaly) PlacedAnomalyCount++;
+            return instance;
+        }
+
+        public void Remove(StageObject instance)
+        {
+            if (instance == null || !placed.Remove(instance)) return;
+            if (instance.IsAnomaly) PlacedAnomalyCount--;
+            // Deactivate first so its colliders leave physics before the deferred destroy.
+            instance.gameObject.SetActive(false);
+            ObjectCatalog.DestroyObject(instance.gameObject);
         }
 
         public void RebuildNavigation()
@@ -89,7 +90,6 @@ namespace Door666.Runtime
                 for (int i = field.Placements.childCount - 1; i >= 0; i--)
                 {
                     var child = field.Placements.GetChild(i).gameObject;
-                    // Deactivate first so old colliders leave physics before the deferred destroy.
                     child.SetActive(false);
                     ObjectCatalog.DestroyObject(child);
                 }

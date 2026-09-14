@@ -19,7 +19,6 @@ namespace Door666.Editor
         private const string MaterialFolder = "Assets/Field/Materials";
         private const string TextureFolder = "Assets/Field/Textures";
 
-        private readonly List<GameObject> overhead = new List<GameObject>();
         private readonly ObjectCatalog catalog = new ObjectCatalog();
         private readonly TMP_FontAsset font = Resources.Load<TMP_FontAsset>(GameConstants.FontResource);
         private readonly Material wallpaper;
@@ -72,7 +71,6 @@ namespace Door666.Editor
             field.BackDoor = BuildDoor(WorldBuilder.BackDoorPosition, false, architecture);
             field.ForwardDoor = BuildDoor(WorldBuilder.ForwardDoorPosition, true, architecture);
             field.FlickerLamp = BuildLighting(architecture);
-            field.Overhead = overhead.ToArray();
 
             // Built at runtime after each round's placements; the scene stores only the settings.
             var surface = root.AddComponent<NavMeshSurface>();
@@ -87,7 +85,7 @@ namespace Door666.Editor
         private void BuildShell(Transform parent)
         {
             Box("Carpet floor", parent, new Vector3(0, -.12f, 2.5f), new Vector3(14, .24f, 19), carpet, true, new Vector2(7, 9.5f));
-            overhead.Add(Box("Low acoustic ceiling", parent, new Vector3(0, 3.37f, 2.5f), new Vector3(14, .18f, 19), ceiling, true, new Vector2(7, 9.5f)));
+            Box("Low acoustic ceiling", parent, new Vector3(0, 3.37f, 2.5f), new Vector3(14, .18f, 19), ceiling, true, new Vector2(7, 9.5f));
             Wall("Left perimeter", parent, new Vector3(-7, 1.65f, 2.5f), new Vector3(.25f, 3.3f, 19));
             Wall("Right perimeter", parent, new Vector3(7, 1.65f, 2.5f), new Vector3(.25f, 3.3f, 19));
             Wall("Entrance wall left", parent, new Vector3(-4, 1.65f, -7), new Vector3(6, 3.3f, .25f));
@@ -113,9 +111,9 @@ namespace Door666.Editor
 
             // Ceiling grid has a real silhouette even at oblique first-person angles.
             for (float x = -7; x <= 7; x += 2)
-                overhead.Add(Box("Ceiling tee long", parent, new Vector3(x, 3.268f, 2.5f), new Vector3(.027f, .025f, 19), metal));
+                Box("Ceiling tee long", parent, new Vector3(x, 3.268f, 2.5f), new Vector3(.027f, .025f, 19), metal);
             for (float z = -7; z <= 12; z += 2)
-                overhead.Add(Box("Ceiling tee cross", parent, new Vector3(0, 3.267f, z), new Vector3(14, .025f, .027f), metal));
+                Box("Ceiling tee cross", parent, new Vector3(0, 3.267f, z), new Vector3(14, .025f, .027f), metal);
         }
 
         private void BuildDetails(Transform parent)
@@ -207,7 +205,6 @@ namespace Door666.Editor
             for (int i = 0; i < positions.Length; i++)
             {
                 var fixture = Child("Fluorescent " + (i + 1), parent);
-                overhead.Add(fixture.gameObject);
                 fixture.position = positions[i];
                 Box("Metal tray", fixture, Vector3.zero, new Vector3(.48f, .09f, 1.35f), metal);
                 Box("Reflector", fixture, new Vector3(0, -.055f, 0), new Vector3(.39f, .025f, 1.22f), paper);

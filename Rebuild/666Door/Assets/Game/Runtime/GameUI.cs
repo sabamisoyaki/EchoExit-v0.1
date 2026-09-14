@@ -11,11 +11,10 @@ namespace Door666.Runtime
 {
     public sealed class GameUI : MonoBehaviour
     {
-        // Screen fractions covered by the stage editor's palette (left) and status bar (bottom).
-        public const float EditorPaletteWidth = .25f;
-        public const float EditorStatusHeight = .11f;
+        private const string EditorControls = "Shift＋クリック  置く     R  回転     Delete  削除     左クリック  叩く     F5  保存     Tab  メニュー";
 
         private SceneController game;
+        private string editorMessage = "";
         private TMP_FontAsset font;
         private RectTransform root;
         private GameObject menu;
@@ -178,41 +177,67 @@ namespace Door666.Runtime
             ButtonAt(menu.transform, "タイトルへ", new Vector2(.35f, .1f), new Vector2(.65f, .19f), () => game.ShowTitle());
         }
 
-        public void ShowEditor(PlacementEditor editor, int currentId, bool anomalyCategory)
+        /// <summary>Stage editing while walking: the crosshair, what will be placed, the latest message and the controls.</summary>
+        public void ShowEditorHud(int currentId, bool unsaved, string selection)
         {
-            BeginMenu(false);
-            var panel = Panel(menu.transform, "Stage editing", new Color(.025f, .033f, .027f, .97f), Vector2.zero, new Vector2(EditorPaletteWidth, 1));
-            Label(panel.transform, "部屋を編集", 34, new Vector2(.08f, .89f), new Vector2(.92f, .97f));
-            Label(panel.transform, "ステージ番号", 18, new Vector2(.08f, .83f), new Vector2(.9f, .89f)).color = muted;
-            stageId = Field(panel.transform, currentId.ToString(), new Vector2(.10f, .77f), new Vector2(.44f, .83f));
-            ButtonAt(panel.transform, "読込", new Vector2(.48f, .77f), new Vector2(.70f, .83f), () =>
+            ClearMenu();
+            hud.SetActive(true);
+            streak.text = "";
+            timer.text = "";
+            prompt.text = "";
+            Fade(0);
+            menu = Panel(root, "Editor HUD", Color.clear, Vector2.zero, Vector2.one);
+            Label(menu.transform, "部屋を編集  ステージ " + currentId + (unsaved ? "  ＊未保存" : ""), 22, new Vector2(.035f, .91f), new Vector2(.50f, .97f));
+            Label(menu.transform, selection, 22, new Vector2(.50f, .91f), new Vector2(.965f, .97f), TextAlignmentOptions.Right);
+            editorStatus = Label(menu.transform, editorMessage, 20, new Vector2(.16f, .16f), new Vector2(.84f, .24f), TextAlignmentOptions.Center);
+            AutoSize(editorStatus, 14);
+            Label(menu.transform, EditorControls, 17, new Vector2(.03f, .025f), new Vector2(.97f, .075f), TextAlignmentOptions.Center).color = muted;
+        }
+
+        /// <summary>The Tab menu: choose what to place, switch stages, save, or leave.</summary>
+        public void ShowEditorMenu(PlacementEditor editor, int currentId, bool unsaved, bool anomalyCategory, string selectedPrefab)
+        {
+            BeginMenu(true);
+            var panel = Panel(menu.transform, "Stage editing", new Color(.025f, .033f, .027f, .97f), new Vector2(.14f, .05f), new Vector2(.86f, .95f));
+            Label(panel.transform, "部屋を編集", 36, new Vector2(.05f, .88f), new Vector2(.55f, .97f));
+            Label(panel.transform, unsaved ? "未保存の変更があります" : "", 18, new Vector2(.55f, .89f), new Vector2(.95f, .95f), TextAlignmentOptions.Right).color = accent;
+
+            Label(panel.transform, "ステージ番号", 18, new Vector2(.05f, .81f), new Vector2(.30f, .86f)).color = muted;
+            stageId = Field(panel.transform, currentId.ToString(), new Vector2(.05f, .73f), new Vector2(.19f, .80f));
+            ButtonAt(panel.transform, "読込", new Vector2(.21f, .73f), new Vector2(.33f, .80f), () =>
             {
                 if (int.TryParse(stageId.text, out int value)) editor.Load(value);
                 else EditorMessage("1以上の番号を入力してください。");
             });
-            ButtonAt(panel.transform, "新規", new Vector2(.72f, .77f), new Vector2(.94f, .83f), () => editor.New());
-            ButtonAt(panel.transform, anomalyCategory ? "通常" : "● 通常", new Vector2(.08f, .68f), new Vector2(.49f, .74f), () => editor.SetCategory(false));
-            ButtonAt(panel.transform, anomalyCategory ? "● 異変" : "異変", new Vector2(.51f, .68f), new Vector2(.92f, .74f), () => editor.SetCategory(true));
+            ButtonAt(panel.transform, "新規", new Vector2(.35f, .73f), new Vector2(.47f, .80f), () => editor.New());
+            ButtonAt(panel.transform, "保存 [F5]", new Vector2(.49f, .73f), new Vector2(.67f, .80f), () => editor.Save(stageId.text));
+
+            Label(panel.transform, "置くもの", 18, new Vector2(.05f, .64f), new Vector2(.30f, .69f)).color = muted;
+            ButtonAt(panel.transform, anomalyCategory ? "通常" : "● 通常", new Vector2(.51f, .63f), new Vector2(.72f, .70f), () => editor.SetCategory(false));
+            ButtonAt(panel.transform, anomalyCategory ? "● 異変" : "異変", new Vector2(.74f, .63f), new Vector2(.95f, .70f), () => editor.SetCategory(true));
             int index = 0;
             foreach (var id in game.World.Catalog.PrefabIds)
             {
                 string key = id;
-                float y = .60f - index++ * .062f;
-                ButtonAt(panel.transform, game.World.Catalog.DisplayName(key), new Vector2(.08f, y), new Vector2(.92f, y + .052f), () => editor.Choose(key));
+                float x = .05f + index % 2 * .46f;
+                float y = .52f - index / 2 * .085f;
+                index++;
+                ButtonAt(panel.transform, (key == selectedPrefab ? "● " : "") + game.World.Catalog.DisplayName(key),
+                    new Vector2(x, y), new Vector2(x + .44f, y + .07f), () => editor.Choose(key));
             }
-            ButtonAt(panel.transform, "回転 [R]", new Vector2(.08f, .13f), new Vector2(.49f, .19f), () => editor.Rotate());
-            ButtonAt(panel.transform, "削除 [Del]", new Vector2(.51f, .13f), new Vector2(.92f, .19f), () => editor.Delete());
-            ButtonAt(panel.transform, "保存 [F5]", new Vector2(.08f, .065f), new Vector2(.92f, .12f), () => editor.Save(stageId.text));
-            ButtonAt(panel.transform, "タイトルへ（未保存は破棄）", new Vector2(.08f, .008f), new Vector2(.92f, .06f), () => game.ShowTitle());
-            // An opaque bar keeps messages readable over the map and stops clicks under it from placing objects.
-            var status = Panel(menu.transform, "Editor status", new Color(.025f, .033f, .027f, .94f), new Vector2(EditorPaletteWidth, 0), new Vector2(1, EditorStatusHeight));
-            editorStatus = Label(status.transform, "名前を選んで床をクリックすると配置できます。\n配置物をクリックして選択。右クリックで配置を解除。", 19, new Vector2(.025f, .06f), new Vector2(.975f, .94f));
-            editorStatus.enableAutoSizing = true;
-            editorStatus.fontSizeMin = 12;
-            editorStatus.fontSizeMax = 19;
+
+            editorStatus = Label(panel.transform, editorMessage, 19, new Vector2(.05f, .13f), new Vector2(.95f, .25f));
+            AutoSize(editorStatus, 13);
+            Label(panel.transform, EditorControls, 15, new Vector2(.05f, .045f), new Vector2(.58f, .12f)).color = muted;
+            ButtonAt(panel.transform, "閉じる [Tab]", new Vector2(.60f, .045f), new Vector2(.76f, .115f), () => editor.SetMenuOpen(false));
+            ButtonAt(panel.transform, "タイトルへ（未保存は破棄）", new Vector2(.78f, .045f), new Vector2(.95f, .115f), () => game.ShowTitle());
         }
 
-        public void EditorMessage(string message) { if (editorStatus != null) editorStatus.text = message; }
+        public void EditorMessage(string message)
+        {
+            editorMessage = message;
+            if (editorStatus != null) editorStatus.text = message;
+        }
         public void SetHUD(int count, int required, double seconds, string interaction)
         {
             streak.text = "連続正解  " + count + " / " + required + "\n" + new string('●', count) + new string('○', Mathf.Max(0, required - count));
@@ -262,6 +287,12 @@ namespace Door666.Runtime
             label.textWrappingMode = TextWrappingModes.Normal;
             label.raycastTarget = false;
             return label;
+        }
+        private static void AutoSize(TMP_Text label, float minimum)
+        {
+            label.fontSizeMax = label.fontSize;
+            label.fontSizeMin = minimum;
+            label.enableAutoSizing = true;
         }
         private void Button(Transform parent, string label, float y, Action action) => ButtonAt(parent, label, new Vector2(.10f, y), new Vector2(.90f, y + .067f), action);
         private UnityEngine.UI.Button ButtonAt(Transform parent, string label, Vector2 min, Vector2 max, Action action)

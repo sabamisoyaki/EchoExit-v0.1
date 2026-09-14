@@ -8,66 +8,53 @@ using UnityEngine.Rendering;
 
 namespace Door666.Runtime
 {
-    /// <summary>Edits an isolated placement draft. No anomaly runtime runs in this view.</summary>
+    /// <summary>
+    /// First-person stage editing inside the field. Placed anomalies are live from the moment they are placed, so their
+    /// rituals can be tried where they stand. Hold Shift to aim a placement; Tab or Esc opens the menu.
+    /// </summary>
     public sealed class PlacementEditor
     {
-        // Walled field (14.3 x 19.3 including walls) plus a margin, centred on the field's middle.
-        private static readonly Vector2 PlanSize = new Vector2(15.4f, 20.4f);
-        private static readonly Vector3 PlanCenter = new Vector3(0, 0, 2.5f);
+        private const float PlacementReach = 8f;
+        private static readonly Color ValidColor = new Color(.38f, .96f, .74f);
+        private static readonly Color InvalidColor = new Color(1f, .30f, .22f);
+        private static readonly Color SelectionColor = new Color(1f, .79f, .36f);
 
         private readonly SceneController game;
+        private readonly AnomalyActorSet anomalies;
         private readonly Dictionary<string, StageDefinitionMetadata> metadata = new Dictionary<string, StageDefinitionMetadata>(StringComparer.Ordinal);
         private readonly Dictionary<string, float> anchorHeights = new Dictionary<string, float>(StringComparer.Ordinal);
-        private readonly List<StageObject> unknownMarkers = new List<StageObject>();
+        private readonly List<AnomalyActor> pendingResets = new List<AnomalyActor>();
         private StageData draft;
-        private StageItem selected;
-        private StageItem pending;
+        private string selectedPrefab;
+        private bool category;
+        private float placementYaw;
         private StageObject preview;
         private GameObject overlays;
         private LineRenderer outline;
         private Material guideMaterial;
         private Material ghostMaterial;
         private bool open;
-        private bool category;
         private bool dirty;
-        private bool previewValid;
-        private Vector3 savedCameraLocalPosition;
-        private Quaternion savedCameraLocalRotation;
-        private Rect savedCameraRect;
-        private float savedOrthographicSize;
-        private bool savedOrthographic;
-        private bool savedFog;
-        private Color savedAmbientSky;
-        private Color savedAmbientEquator;
-        private Color savedAmbientGround;
 
+        public bool IsOpen => open;
+        public bool MenuOpen { get; private set; }
         public int CurrentSceneId => draft == null ? 0 : draft.sceneId;
         public bool HasUnsavedChanges => dirty;
+        public IReadOnlyList<AnomalyActor> Actors => anomalies.Actors;
 
         public PlacementEditor(SceneController owner)
         {
             if (owner == null) throw new ArgumentNullException(nameof(owner));
             game = owner;
+            anomalies = new AnomalyActorSet(owner);
+            anomalies.Recognized += OnRecognized;
+            anomalies.Caught += OnCaught;
         }
 
         public void Open()
         {
             Close();
             open = true;
-            var camera = game.Player.View;
-            savedCameraLocalPosition = camera.transform.localPosition;
-            savedCameraLocalRotation = camera.transform.localRotation;
-            savedCameraRect = camera.rect;
-            savedOrthographicSize = camera.orthographicSize;
-            savedOrthographic = camera.orthographic;
-            savedFog = RenderSettings.fog;
-            savedAmbientSky = RenderSettings.ambientSkyColor;
-            savedAmbientEquator = RenderSettings.ambientEquatorColor;
-            savedAmbientGround = RenderSettings.ambientGroundColor;
-            camera.orthographic = true;
-            // A partial viewport leaves the rest of the back buffer uncleared, so render full screen and frame the plan instead.
-            camera.rect = new Rect(0, 0, 1, 1);
-            FrameCamera();
             overlays = new GameObject("Placement editing guides");
             CreateMaterials();
             var line = new GameObject("Placement outline");
@@ -76,137 +63,74 @@ namespace Door666.Runtime
             outline.sharedMaterial = guideMaterial;
             outline.useWorldSpace = true;
             outline.loop = true;
-            outline.widthMultiplier = .045f;
+            outline.widthMultiplier = .03f;
             outline.positionCount = 4;
             outline.shadowCastingMode = ShadowCastingMode.Off;
             outline.receiveShadows = false;
             outline.enabled = false;
             MeasureCatalog();
+            game.UI.EditorMessage("Tab でメニューを開き、置くものを選んでください。置いた異変はその場で儀式を試せます。");
             var first = game.Repository.Data.scenes.FirstOrDefault(stage => stage != null && stage.sceneId > 0);
             if (first == null) New(); else Load(first.sceneId);
+            SetMenuOpen(false);
         }
 
         public void Close()
         {
             if (!open) return;
             open = false;
-            CancelPreview();
+            anomalies.Clear();
+            pendingResets.Clear();
+            DestroyPreview();
             if (overlays != null) ObjectCatalog.DestroyObject(overlays);
             if (guideMaterial != null) ObjectCatalog.DestroyObject(guideMaterial);
             if (ghostMaterial != null) ObjectCatalog.DestroyObject(ghostMaterial);
-            if (game.Player != null && game.Player.View != null)
-            {
-                var camera = game.Player.View;
-                camera.transform.localPosition = savedCameraLocalPosition;
-                camera.transform.localRotation = savedCameraLocalRotation;
-                camera.rect = savedCameraRect;
-                camera.orthographic = savedOrthographic;
-                camera.orthographicSize = savedOrthographicSize;
-            }
-            RenderSettings.fog = savedFog;
-            RenderSettings.ambientSkyColor = savedAmbientSky;
-            RenderSettings.ambientEquatorColor = savedAmbientEquator;
-            RenderSettings.ambientGroundColor = savedAmbientGround;
-            unknownMarkers.Clear();
-            selected = null;
             draft = null;
             dirty = false;
+            MenuOpen = false;
         }
 
-        public void Tick()
+        public void Tick(float deltaTime)
         {
             if (!open || draft == null) return;
-            var camera = game.Player.View;
-            FrameCamera();
-            bool blocked = game.UI.TextHasFocus || game.UI.PointerOverUI;
-            if (blocked)
-            {
-                if (preview != null) preview.gameObject.SetActive(false);
-                if (pending != null && outline != null) outline.enabled = false;
-                return;
-            }
-
-            var mouse = Mouse.current;
+            float dt = Mathf.Min(deltaTime, .1f);
             var keyboard = Keyboard.current;
-            if (keyboard != null)
+            bool typing = game.UI.TextHasFocus;
+            if (game.Input.Pause.WasPressedThisFrame() || (!typing && keyboard != null && keyboard.tabKey.wasPressedThisFrame))
             {
-                if (keyboard.rKey.wasPressedThisFrame) Rotate();
-                if (keyboard.deleteKey.wasPressedThisFrame) Delete();
-                if (keyboard.f5Key.wasPressedThisFrame) Save(game.UI.EditorSceneIdText);
+                SetMenuOpen(!MenuOpen);
+                return;
             }
-            if (mouse == null) return;
-            if (mouse.rightButton.wasPressedThisFrame)
+            if (MenuOpen)
             {
-                CancelPreview();
-                game.UI.EditorMessage("配置物をクリックして選択できます。");
-                UpdateSelectionOutline();
+                if (!typing && keyboard != null && keyboard.f5Key.wasPressedThisFrame) Save(game.UI.EditorSceneIdText);
                 return;
             }
 
-            var screenPoint = mouse.position.ReadValue();
-            var plan = new Rect(Screen.width * GameUI.EditorPaletteWidth, Screen.height * GameUI.EditorStatusHeight,
-                Screen.width * (1 - GameUI.EditorPaletteWidth), Screen.height * (1 - GameUI.EditorStatusHeight));
-            if (!plan.Contains(screenPoint))
-            {
-                if (preview != null) preview.gameObject.SetActive(false);
-                if (pending != null && outline != null) outline.enabled = false;
-                return;
-            }
-            Ray ray = camera.ScreenPointToRay(screenPoint);
-            if (pending != null)
-            {
-                var floor = new Plane(Vector3.up, Vector3.zero);
-                if (!floor.Raycast(ray, out float enter)) return;
-                Vector3 point = ray.GetPoint(enter);
-                point.x = Mathf.Round(point.x * 4) / 4;
-                point.z = Mathf.Round(point.z * 4) / 4;
-                point.y = anchorHeights.TryGetValue(pending.prefabId, out float height) ? height : .5f;
-                pending.position = ToFloat(point);
-                preview.transform.SetPositionAndRotation(point, Quaternion.Euler(ToVector(pending.rotation)));
-                preview.gameObject.SetActive(true);
-                previewValid = FitsField(pending) && !IntersectsArchitecture(pending);
-                DrawOutline(pending, previewValid ? new Color(.38f, .96f, .74f) : new Color(1f, .30f, .22f));
-                if (mouse.leftButton.wasPressedThisFrame)
-                {
-                    if (!previewValid) { game.UI.EditorMessage("壁や扉を避け、床の範囲内に配置してください。"); return; }
-                    selected = pending.Clone();
-                    draft.items.Add(selected);
-                    dirty = true;
-                    RebuildDraft();
-                    game.UI.EditorMessage(game.World.Catalog.DisplayName(pending.prefabId) + "を配置しました。続けて配置できます。右クリックで解除。");
-                }
-            }
-            else if (mouse.leftButton.wasPressedThisFrame)
-            {
-                selected = null;
-                float nearest = float.PositiveInfinity;
-                foreach (var placed in AllEditableObjects())
-                {
-                    if (placed == null || !placed.TryGetComponent<Collider>(out var collider)) continue;
-                    if (!collider.Raycast(ray, out var hit, 100f) || hit.distance >= nearest) continue;
-                    nearest = hit.distance;
-                    selected = placed.Data;
-                }
-                UpdateSelectionOutline();
-                game.UI.EditorMessage(selected == null ? "配置物をクリックして選択できます。"
-                    : game.World.Catalog.DisplayName(selected.prefabId) + "を選択しました。回転 [R] ／ 削除 [Del]");
-            }
+            game.Player.Tick(game.Input, game.Settings.playerSpeed, dt);
+            var view = game.Player.View.transform;
+            Physics.Raycast(view.position, view.forward, out var gaze, game.Settings.interactionDistance, ~0, QueryTriggerInteraction.Ignore);
+            var gazed = gaze.collider == null ? null : gaze.collider.GetComponentInParent<StageObject>();
+            bool aiming = keyboard != null && (keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed);
+            bool clicked = game.Input.Hit.WasPressedThisFrame();
+            // While aiming, the click places instead of striking.
+            anomalies.Tick(gazed, clicked && !aiming, dt);
+            ProcessResets();
+
+            if (aiming) AimPlacement(view, keyboard, clicked);
+            else HoverPlaced(view, keyboard);
+            if (keyboard != null && keyboard.f5Key.wasPressedThisFrame) Save(draft.sceneId.ToString());
         }
 
-        /// <summary>Fits the walled field into the screen area beside the palette and above the status bar.</summary>
-        public void FrameCamera()
+        public void SetMenuOpen(bool value)
         {
             if (!open) return;
-            var camera = game.Player.View;
-            float aspect = camera.pixelWidth / (float)Mathf.Max(1, camera.pixelHeight);
-            float planWidth = 1 - GameUI.EditorPaletteWidth;
-            float planHeight = 1 - GameUI.EditorStatusHeight;
-            float size = Mathf.Max(PlanSize.y * .5f / planHeight, PlanSize.x * .5f / (aspect * planWidth));
-            camera.orthographicSize = size;
-            // Shift the camera so the plan's centre lands in the middle of the uncovered area, not of the whole screen.
-            float shiftX = (GameUI.EditorPaletteWidth + planWidth * .5f - .5f) * 2 * size * aspect;
-            float shiftZ = (GameUI.EditorStatusHeight + planHeight * .5f - .5f) * 2 * size;
-            camera.transform.SetPositionAndRotation(new Vector3(PlanCenter.x - shiftX, 18, PlanCenter.z - shiftZ), Quaternion.Euler(90, 0, 0));
+            MenuOpen = value;
+            anomalies.Suspend(value);
+            if (value) HideGuides();
+            Cursor.lockState = value ? CursorLockMode.None : CursorLockMode.Locked;
+            Cursor.visible = value;
+            RefreshUI();
         }
 
         public void Load(int sceneId)
@@ -214,50 +138,38 @@ namespace Door666.Runtime
             if (!open) return;
             var stage = game.Repository.Data.scenes.FirstOrDefault(value => value != null && value.sceneId == sceneId);
             if (sceneId < 1 || stage == null) { game.UI.EditorMessage("指定した番号のステージはありません。"); return; }
-            CancelPreview();
-            selected = null;
-            draft = stage.Clone();
-            dirty = false;
-            RebuildDraft();
-            game.UI.ShowEditor(this, draft.sceneId, category);
+            SetDraft(stage.Clone());
             int unknown = draft.items.Count(item => item != null && !game.World.Catalog.IsKnown(item.prefabId));
             game.UI.EditorMessage("ステージ " + draft.sceneId + " を読み込みました。"
-                + (unknown > 0 ? "\n未対応の配置物 " + unknown + " 個は橙色で表示し、保存データを保持します。" : "\n配置物を選ぶか、左の名前から追加できます。"));
+                + (unknown > 0 ? "\n未対応の配置物 " + unknown + " 個は表示しませんが、保存データには残します。" : ""));
         }
 
         public void New()
         {
             if (!open) return;
-            CancelPreview();
-            selected = null;
-            draft = new StageData { sceneId = StageRepository.NextSceneId(game.Repository.Data) };
-            dirty = false;
-            RebuildDraft();
-            game.UI.ShowEditor(this, draft.sceneId, category);
-            game.UI.EditorMessage("新しいステージ " + draft.sceneId + "。名前を選び、床をクリックして配置してください。");
+            SetDraft(new StageData { sceneId = StageRepository.NextSceneId(game.Repository.Data) });
+            game.UI.EditorMessage("新しいステージ " + draft.sceneId + " です。Shift を押しながら床を見て、クリックで置きます。");
         }
 
         public void SetCategory(bool anomaly)
         {
             if (!open) return;
             category = anomaly;
-            CancelPreview();
-            int displayId = int.TryParse(game.UI.EditorSceneIdText, out int parsed) && parsed > 0 ? parsed : draft.sceneId;
-            game.UI.ShowEditor(this, displayId, category);
-            game.UI.EditorMessage(category ? "異変の名前を選んで配置してください。" : "通常オブジェクトの名前を選んで配置してください。");
-            UpdateSelectionOutline();
+            game.UI.EditorMessage(category ? "異変として置きます。" : "通常オブジェクトとして置きます。");
+            RefreshUI();
         }
 
+        /// <summary>Selects what Shift-aiming places, and returns to walking.</summary>
         public void Choose(string prefabId)
         {
             if (!open || !game.World.Catalog.IsKnown(prefabId)) return;
             var definition = game.Definitions.FindByPrefab(prefabId);
             if (category && definition != null && !definition.userStageAllowed)
             { game.UI.EditorMessage("この異変は公式ステージ専用です。"); return; }
-            CancelPreview();
-            selected = null;
-            pending = new StageItem { prefabId = prefabId, isAnomaly = category };
-            preview = game.World.Catalog.Create(pending, overlays.transform);
+            selectedPrefab = prefabId;
+            placementYaw = 0;
+            DestroyPreview();
+            preview = game.World.Catalog.Create(new StageItem { prefabId = prefabId, isAnomaly = category }, overlays.transform);
             foreach (var collider in preview.GetComponentsInChildren<Collider>(true)) collider.enabled = false;
             foreach (var renderer in preview.GetComponentsInChildren<Renderer>(true))
             {
@@ -268,40 +180,51 @@ namespace Door666.Runtime
                 renderer.receiveShadows = false;
             }
             preview.gameObject.SetActive(false);
-            game.UI.EditorMessage(game.World.Catalog.DisplayName(prefabId) + " ／ " + (category ? "異変" : "通常")
-                + "\n床をクリックして配置。Rで回転、右クリックで解除。");
+            game.UI.EditorMessage(game.World.Catalog.DisplayName(prefabId) + "（" + (category ? "異変" : "通常") + "）を選びました。Shift を押しながら床を見て、クリックで置きます。");
+            SetMenuOpen(false);
         }
 
-        public void Rotate()
+        /// <summary>Places the selected item at a floor point, snapped like manual placement. The item is live immediately.</summary>
+        public bool TryPlace(Vector3 floorPoint, out string problem)
         {
-            if (!open) return;
-            StageItem item = pending ?? selected;
-            if (item == null) { game.UI.EditorMessage("回転する配置物を選択してください。"); return; }
+            problem = null;
+            if (!open || selectedPrefab == null) { problem = "置くものが選ばれていません。"; return false; }
+            var item = PendingItem(floorPoint);
+            problem = PlacementProblem(item);
+            if (problem != null) return false;
+            Place(item);
+            return true;
+        }
+
+        public void Rotate(StageObject target)
+        {
+            if (!open || target == null || !game.World.PlacedObjects.Contains(target)) return;
+            var item = target.Data;
             var previous = item.rotation;
             item.rotation = new Float3(previous.x, Mathf.Repeat(previous.y + 45, 360), previous.z);
-            if (pending != null) return;
-            if (!FitsField(item) || IntersectsArchitecture(item))
+            string problem = PlacementProblem(item);
+            if (problem != null)
             {
                 item.rotation = previous;
-                game.UI.EditorMessage("回転すると壁や扉に重なるか床の範囲を超えるため、回転できません。");
+                game.UI.EditorMessage("回転できません。" + problem);
                 return;
             }
-            dirty = true;
-            RebuildDraft();
-            game.UI.EditorMessage(game.World.Catalog.DisplayName(item.prefabId) + "を回転しました。");
+            Respawn(target);
+            game.World.RebuildNavigation();
+            MarkDirty(game.World.Catalog.DisplayName(item.prefabId) + "を回転しました。");
         }
 
-        public void Delete()
+        public void Delete(StageObject target)
         {
-            if (!open) return;
-            if (pending != null) { CancelPreview(); UpdateSelectionOutline(); return; }
-            if (selected == null) { game.UI.EditorMessage("削除する配置物を選択してください。"); return; }
-            string name = game.World.Catalog.DisplayName(selected.prefabId);
-            draft.items.Remove(selected);
-            selected = null;
-            dirty = true;
-            RebuildDraft();
-            game.UI.EditorMessage(name + "を削除しました。保存すると反映されます。");
+            if (!open || target == null || !game.World.PlacedObjects.Contains(target)) return;
+            string name = game.World.Catalog.DisplayName(target.PrefabId);
+            draft.items.Remove(target.Data);
+            var actor = target.GetComponent<AnomalyActor>();
+            if (actor != null) anomalies.Remove(actor);
+            game.World.Remove(target);
+            game.World.RebuildNavigation();
+            if (outline != null) outline.enabled = false;
+            MarkDirty(name + "を削除しました。保存すると反映されます。");
         }
 
         public void Save(string sceneId)
@@ -341,40 +264,170 @@ namespace Door666.Runtime
             if (!saved.Success) { game.UI.EditorMessage(saved.Error); return; }
             draft.sceneId = id;
             dirty = false;
-            game.UI.ShowEditor(this, id, category);
             game.UI.EditorMessage("ステージ " + id + " を保存しました。"
                 + (result.Warnings.Count > 0 ? "\n" + string.Join("\n", result.Warnings.Take(2)) : ""));
+            RefreshUI();
         }
 
-        private void RebuildDraft()
+        private void SetDraft(StageData stage)
         {
-            foreach (var marker in unknownMarkers) if (marker != null) ObjectCatalog.DestroyObject(marker.gameObject);
-            unknownMarkers.Clear();
-            game.World.Build(draft, true, int.MaxValue, editing: true);
-            RenderSettings.fog = false;
-            // Ceiling fixtures only light the floor beneath them; a plan view needs even light to read placements.
-            RenderSettings.ambientSkyColor = new Color(.46f, .47f, .38f);
-            RenderSettings.ambientEquatorColor = new Color(.40f, .40f, .32f);
-            RenderSettings.ambientGroundColor = new Color(.30f, .29f, .23f);
+            anomalies.Clear();
+            pendingResets.Clear();
+            draft = stage;
+            dirty = false;
+            game.World.Build(draft, true, int.MaxValue, enforceRoundRules: false);
             foreach (var placed in game.World.PlacedObjects)
             {
-                if (placed != null && placed.GetComponentsInChildren<Renderer>().Length == 0)
-                    AddInvisibleMarker(placed, new Color(.33f, .78f, .65f));
+                anomalies.Attach(placed);
+                MarkInvisible(placed);
             }
-            foreach (var item in draft.items)
+            game.Player.Teleport(WorldBuilder.SpawnPosition);
+            HideGuides();
+            RefreshUI();
+        }
+
+        private void Place(StageItem item)
+        {
+            draft.items.Add(item);
+            var placed = game.World.Add(item);
+            anomalies.Attach(placed);
+            MarkInvisible(placed);
+            game.World.RebuildNavigation();
+            MarkDirty(game.World.Catalog.DisplayName(item.prefabId) + "を置きました。" + (item.isAnomaly ? "その場で儀式を試せます。" : ""));
+        }
+
+        /// <summary>Recreates a placement from its data: back at its authored pose, with a fresh, unrecognized ritual.</summary>
+        private void Respawn(StageObject placed)
+        {
+            var item = placed.Data;
+            var actor = placed.GetComponent<AnomalyActor>();
+            if (actor != null) anomalies.Remove(actor);
+            game.World.Remove(placed);
+            var fresh = game.World.Add(item);
+            anomalies.Attach(fresh);
+            MarkInvisible(fresh);
+        }
+
+        private void AimPlacement(Transform view, Keyboard keyboard, bool clicked)
+        {
+            if (selectedPrefab == null)
             {
-                if (item == null || game.World.Catalog.IsKnown(item.prefabId)) continue;
-                var markerObject = new GameObject("Unsupported placement");
-                markerObject.transform.SetParent(overlays.transform, false);
-                markerObject.transform.SetPositionAndRotation(ToVector(item.position), Quaternion.Euler(ToVector(item.rotation)));
-                var marker = markerObject.AddComponent<StageObject>();
-                marker.Data = item;
-                markerObject.AddComponent<BoxCollider>().size = new Vector3(.5f, .5f, .5f);
-                AddInvisibleMarker(marker, new Color(1f, .59f, .22f));
-                unknownMarkers.Add(marker);
+                HideGuides();
+                game.UI.EditorMessage("Tab でメニューを開き、置くものを選んでください。");
+                return;
             }
-            Physics.SyncTransforms();
-            UpdateSelectionOutline();
+            if (keyboard.rKey.wasPressedThisFrame) placementYaw = Mathf.Repeat(placementYaw + 45, 360);
+            if (!TryAimPoint(view, out var point)) { HideGuides(); return; }
+            var item = PendingItem(point);
+            preview.transform.SetPositionAndRotation(ToVector(item.position), Quaternion.Euler(ToVector(item.rotation)));
+            preview.gameObject.SetActive(true);
+            string problem = PlacementProblem(item);
+            DrawOutline(item, problem == null ? ValidColor : InvalidColor);
+            if (!clicked) return;
+            if (problem != null) game.UI.EditorMessage(problem);
+            else Place(item);
+        }
+
+        private void HoverPlaced(Transform view, Keyboard keyboard)
+        {
+            if (preview != null) preview.gameObject.SetActive(false);
+            // Triggers count here so renderer-less placements such as the footstep echo can still be selected.
+            Physics.Raycast(view.position, view.forward, out var hit, game.Settings.interactionDistance, ~0, QueryTriggerInteraction.Collide);
+            var target = hit.collider == null ? null : hit.collider.GetComponentInParent<StageObject>();
+            if (target == null || !game.World.PlacedObjects.Contains(target))
+            {
+                if (outline != null) outline.enabled = false;
+                return;
+            }
+            DrawOutline(target.Data, SelectionColor);
+            if (keyboard == null) return;
+            if (keyboard.rKey.wasPressedThisFrame) Rotate(target);
+            else if (keyboard.deleteKey.wasPressedThisFrame) Delete(target);
+        }
+
+        /// <summary>The floor point under the crosshair, pulled back in front of any wall or object in between.</summary>
+        private static bool TryAimPoint(Transform view, out Vector3 point)
+        {
+            point = default;
+            var ray = new Ray(view.position, view.forward);
+            if (!new Plane(Vector3.up, Vector3.zero).Raycast(ray, out float distance) || distance > PlacementReach) return false;
+            if (Physics.Raycast(ray, out var obstacle, distance, ~0, QueryTriggerInteraction.Ignore) && obstacle.point.y > .02f)
+                distance = Mathf.Max(0, obstacle.distance - .35f);
+            point = ray.GetPoint(distance);
+            point.y = 0;
+            return true;
+        }
+
+        private StageItem PendingItem(Vector3 floorPoint)
+        {
+            float height = anchorHeights.TryGetValue(selectedPrefab, out float anchor) ? anchor : .5f;
+            return new StageItem
+            {
+                prefabId = selectedPrefab,
+                isAnomaly = category,
+                position = new Float3(Mathf.Round(floorPoint.x * 4) / 4, height, Mathf.Round(floorPoint.z * 4) / 4),
+                rotation = new Float3(0, placementYaw, 0)
+            };
+        }
+
+        private string PlacementProblem(StageItem item)
+        {
+            if (!FitsField(item)) return "床の範囲の外には置けません。";
+            if (IntersectsArchitecture(item)) return "壁や扉と重なる場所には置けません。";
+            var body = game.Player.GetComponent<CharacterController>();
+            if (body != null && WorldBounds(item).Intersects(body.bounds)) return "自分と重なる場所には置けません。";
+            return null;
+        }
+
+        private void OnRecognized(AnomalyActor actor)
+        {
+            game.UI.Banner(actor.IsThreat ? "異変を認識した。  追ってくる。" : "異変を認識した。");
+        }
+
+        // Respawning destroys the actor, so captures are handled after the tick that reported them.
+        private void OnCaught(AnomalyActor actor)
+        {
+            if (!pendingResets.Contains(actor)) pendingResets.Add(actor);
+        }
+
+        private void ProcessResets()
+        {
+            if (pendingResets.Count == 0) return;
+            foreach (var actor in pendingResets)
+            {
+                var placed = actor == null ? null : actor.GetComponent<StageObject>();
+                if (placed == null || !game.World.PlacedObjects.Contains(placed)) continue;
+                game.UI.Banner("「" + game.World.Catalog.DisplayName(placed.PrefabId) + "」に捕まった。元の位置に戻した。");
+                Respawn(placed);
+            }
+            pendingResets.Clear();
+        }
+
+        private void MarkDirty(string message)
+        {
+            dirty = true;
+            game.UI.EditorMessage(message);
+            RefreshUI();
+        }
+
+        private void RefreshUI()
+        {
+            if (!open || draft == null) return;
+            if (MenuOpen) game.UI.ShowEditorMenu(this, draft.sceneId, dirty, category, selectedPrefab);
+            else game.UI.ShowEditorHud(draft.sceneId, dirty, selectedPrefab == null ? "置くもの：未選択（Tab で選ぶ）"
+                : "置くもの：" + game.World.Catalog.DisplayName(selectedPrefab) + (category ? "（異変）" : "（通常）"));
+        }
+
+        private void HideGuides()
+        {
+            if (preview != null) preview.gameObject.SetActive(false);
+            if (outline != null) outline.enabled = false;
+        }
+
+        private void DestroyPreview()
+        {
+            if (preview != null) ObjectCatalog.DestroyObject(preview.gameObject);
+            preview = null;
         }
 
         private void MeasureCatalog()
@@ -404,8 +457,6 @@ namespace Door666.Runtime
             }
             finally { ObjectCatalog.DestroyObject(samples); }
         }
-
-        private IEnumerable<StageObject> AllEditableObjects() => game.World.PlacedObjects.Concat(unknownMarkers);
 
         private Bounds WorldBounds(StageItem item)
         {
@@ -438,23 +489,16 @@ namespace Door666.Runtime
             foreach (var collider in Physics.OverlapBox(center, half, rotation, ~0, QueryTriggerInteraction.Ignore))
             {
                 if (collider == null || collider.bounds.max.y <= .05f || collider.GetComponentInParent<StageObject>() != null) continue;
-                if (game.World.Root != null && collider.transform.IsChildOf(game.World.Root.transform)) return true;
+                if (collider.transform.IsChildOf(game.World.Root.transform)) return true;
             }
             return false;
-        }
-
-        private void UpdateSelectionOutline()
-        {
-            if (outline == null) return;
-            if (selected == null || pending != null) { outline.enabled = false; return; }
-            DrawOutline(selected, new Color(1f, .79f, .36f));
         }
 
         private void DrawOutline(StageItem item, Color color)
         {
             if (outline == null) return;
             var bounds = WorldBounds(item);
-            float y = Mathf.Max(.035f, bounds.max.y + .04f);
+            float y = .03f;
             outline.startColor = color;
             outline.endColor = color;
             var properties = new MaterialPropertyBlock();
@@ -467,13 +511,15 @@ namespace Door666.Runtime
             outline.enabled = true;
         }
 
-        private void AddInvisibleMarker(StageObject parent, Color color)
+        /// <summary>Renderer-less placements (the footstep echo) get a floor disc so they can be found and selected.</summary>
+        private void MarkInvisible(StageObject placed)
         {
+            if (placed == null || placed.GetComponentsInChildren<Renderer>().Length > 0) return;
             var marker = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             marker.name = "Editor location marker";
-            marker.transform.SetParent(parent.transform, false);
+            marker.transform.SetParent(placed.transform, false);
             marker.transform.localPosition = Vector3.zero;
-            marker.transform.localScale = new Vector3(.36f, .025f, .36f);
+            marker.transform.localScale = new Vector3(.36f, .01f, .36f);
             var collider = marker.GetComponent<Collider>();
             collider.enabled = false;
             ObjectCatalog.DestroyObject(collider);
@@ -481,8 +527,8 @@ namespace Door666.Runtime
             renderer.sharedMaterial = guideMaterial;
             renderer.shadowCastingMode = ShadowCastingMode.Off;
             var properties = new MaterialPropertyBlock();
-            properties.SetColor("_BaseColor", color);
-            properties.SetColor("_Color", color);
+            properties.SetColor("_BaseColor", new Color(.33f, .78f, .65f));
+            properties.SetColor("_Color", new Color(.33f, .78f, .65f));
             renderer.SetPropertyBlock(properties);
         }
 
@@ -506,14 +552,6 @@ namespace Door666.Runtime
             if (door == null) return;
             foreach (var collider in door.GetComponentsInChildren<Collider>())
                 context.DoorBounds.Add(new StageBounds(ToFloat(collider.bounds.center), ToFloat(collider.bounds.extents)));
-        }
-
-        private void CancelPreview()
-        {
-            if (preview != null) ObjectCatalog.DestroyObject(preview.gameObject);
-            preview = null;
-            pending = null;
-            previewValid = false;
         }
 
         private static Float3 ToFloat(Vector3 value) => new Float3(value.x, value.y, value.z);

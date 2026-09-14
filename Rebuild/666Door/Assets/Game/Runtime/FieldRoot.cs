@@ -14,8 +14,6 @@ namespace Door666.Runtime
         public DoorTarget ForwardDoor;
         public DoorTarget BackDoor;
         public NavMeshSurface Navigation;
-        [Tooltip("Ceiling and fixtures hidden by the top-down stage editor.")]
-        public GameObject[] Overhead = new GameObject[0];
         [Tooltip("Remote service-bay lamp that briefly drops out; the player route stays legible.")]
         public Light FlickerLamp;
 

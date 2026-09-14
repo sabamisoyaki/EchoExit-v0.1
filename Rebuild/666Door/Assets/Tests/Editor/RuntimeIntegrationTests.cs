@@ -94,14 +94,18 @@ namespace Door666.Tests
             for (int frame = 0; frame < SceneTestUtility.MaxLoadFrames && !SceneTestUtility.IsReady(out editor); frame++) yield return null;
             Assert.That(editor != null && editor.IsReady, Is.True, "EditModeSceneController did not become ready.");
             Assert.That(editor.Screen, Is.EqualTo(GameScreen.Editing));
-            Assert.That(editor.Player.View.orthographic, Is.True);
+            Assert.That(editor.StageEditor.IsOpen, Is.True);
+            Assert.That(editor.Player.View.orthographic, Is.False);
+            // The run's actors went with the Game scene; the first stage places no anomalies of its own.
             Assert.That(Object.FindObjectsByType<AnomalyActor>(FindObjectsSortMode.None), Is.Empty);
             Capture(editor, "04-stage-editor.png");
+            editor.StageEditor.SetMenuOpen(true);
+            yield return null;
+            Capture(editor, "05-stage-editor-menu.png");
 
             editor.ShowTitle();
             for (int frame = 0; frame < SceneTestUtility.MaxLoadFrames && !SceneTestUtility.IsReady(out title); frame++) yield return null;
             Assert.That(title != null && title.IsReady, Is.True, "TitleSceneController did not become ready.");
-            Assert.That(title.Player.View.orthographic, Is.False);
             Assert.That(Object.FindObjectsByType<SceneController>(FindObjectsSortMode.None), Has.Length.EqualTo(1));
             yield return new ExitPlayMode();
         }
@@ -111,7 +115,6 @@ namespace Door666.Tests
             string directory = Path.GetFullPath(Path.Combine(Application.dataPath, "../Artifacts/Screenshots"));
             Directory.CreateDirectory(directory);
             var camera = screen.Player.View;
-            var editor = screen as EditModeSceneController;
             var canvas = screen.UI.GetComponent<Canvas>();
             var originalMode = canvas.renderMode;
             var originalCamera = canvas.worldCamera;
@@ -121,9 +124,7 @@ namespace Door666.Tests
             var previous = RenderTexture.active;
             try
             {
-                // Frame the stage editor for the capture size rather than the batch-mode window.
                 camera.targetTexture = target;
-                if (editor != null) editor.StageEditor.FrameCamera();
                 canvas.renderMode = RenderMode.ScreenSpaceCamera;
                 canvas.worldCamera = camera;
                 canvas.planeDistance = .3f;
@@ -139,7 +140,6 @@ namespace Door666.Tests
                 canvas.renderMode = originalMode;
                 canvas.worldCamera = originalCamera;
                 camera.targetTexture = originalTarget;
-                if (editor != null) editor.StageEditor.FrameCamera();
                 RenderTexture.active = previous;
                 Object.Destroy(image);
                 Object.Destroy(target);

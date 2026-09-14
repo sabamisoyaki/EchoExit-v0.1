@@ -9,12 +9,20 @@ namespace Door666.Runtime
     public sealed class GameSceneController : SceneController
     {
         public RunSession Session { get; private set; }
-        public IReadOnlyList<AnomalyActor> Actors => actors;
+        public IReadOnlyList<AnomalyActor> Actors => anomalies.Actors;
 
-        private readonly List<AnomalyActor> actors = new List<AnomalyActor>();
+        private AnomalyActorSet anomalies;
         private readonly System.Random random = new System.Random();
         private StageData currentStage;
         private Coroutine transition;
+
+        protected override void Awake()
+        {
+            base.Awake();
+            anomalies = new AnomalyActorSet(this);
+            anomalies.Recognized += OnRecognition;
+            anomalies.Caught += OnCaught;
+        }
 
         protected override void Enter() => StartRun();
 
@@ -43,14 +51,8 @@ namespace Door666.Runtime
             UI.SetHUD(Session.Streak, Session.RequiredStreak, Session.RemainingSeconds, prompt);
             // Door input takes precedence, immediately closes the round, and freezes pursuit.
             if (door != null && Input.Interact.WasPressedThisFrame()) { ChooseDoor(door.IsForward); return; }
-            bool tapped = Input.Hit.WasPressedThisFrame();
-            foreach (var actor in actors)
-            {
-                if (actor == null) continue;
-                bool gazing = target != null && actor.gameObject == target.gameObject;
-                actor.Tick(actor.GetPerception(Player.transform.position, Player.Speed, gazing, tapped && gazing), dt);
-                if (Screen != GameScreen.Playing) break;
-            }
+            // A capture ends the run and suspends every actor, so the remaining actors skip this frame.
+            anomalies.Tick(target, Input.Hit.WasPressedThisFrame(), dt);
         }
 
         /// <summary>Starts a fresh run in place; retrying from the ending does not reload the scene.</summary>
@@ -80,22 +82,11 @@ namespace Door666.Runtime
 
         public void LoadRound(StageData stage, bool includeAnomalies)
         {
-            SuspendActors(true);
-            actors.Clear();
+            anomalies.Clear();
             currentStage = stage;
             World.Build(stage, includeAnomalies, Settings.maximumAnomalies);
             Player.Teleport(WorldBuilder.SpawnPosition);
-            foreach (var placed in World.PlacedObjects)
-            {
-                var definition = Definitions.FindByPrefab(placed.PrefabId);
-                if (!placed.IsAnomaly || definition == null) continue;
-                var actor = placed.gameObject.AddComponent<AnomalyActor>();
-                actor.Initialize(definition, true, placed.VisualRoot, Player.transform, Player.View, Settings.playerSpeed);
-                actor.Recognized += OnRecognition;
-                actor.Caught += OnCaught;
-                actor.Subtitle += UI.Subtitle;
-                actors.Add(actor);
-            }
+            foreach (var placed in World.PlacedObjects) anomalies.Attach(placed);
             Session.BeginRound(stage.sceneId, World.PlacedAnomalyCount);
             Screen = GameScreen.Playing;
             SetCursor(false);
@@ -169,7 +160,7 @@ namespace Door666.Runtime
         }
 
         private void StopTransition() { if (transition != null) { StopCoroutine(transition); transition = null; } }
-        private void SuspendActors(bool suspend) { foreach (var actor in actors) if (actor != null) actor.Suspend(suspend); }
+        private void SuspendActors(bool suspend) => anomalies.Suspend(suspend);
         private void OnApplicationFocus(bool focus) { if (!focus && Screen == GameScreen.Playing && !Application.isBatchMode) Pause(); }
     }
 }

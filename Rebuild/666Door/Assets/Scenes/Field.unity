@@ -13571,34 +13571,6 @@ MonoBehaviour:
   ForwardDoor: {fileID: 1633935702}
   BackDoor: {fileID: 1958211480}
   Navigation: {fileID: 1117215868}
-  Overhead:
-  - {fileID: 1498288295}
-  - {fileID: 1809049874}
-  - {fileID: 1278308090}
-  - {fileID: 502382620}
-  - {fileID: 225962756}
-  - {fileID: 1079833397}
-  - {fileID: 1710660836}
-  - {fileID: 670493706}
-  - {fileID: 1305478876}
-  - {fileID: 1588556803}
-  - {fileID: 2054624950}
-  - {fileID: 1534474051}
-  - {fileID: 335609231}
-  - {fileID: 1047740906}
-  - {fileID: 87327377}
-  - {fileID: 1341131053}
-  - {fileID: 1401891529}
-  - {fileID: 637779954}
-  - {fileID: 233372878}
-  - {fileID: 301048399}
-  - {fileID: 519921795}
-  - {fileID: 730860051}
-  - {fileID: 1808722278}
-  - {fileID: 89217601}
-  - {fileID: 86380485}
-  - {fileID: 202997996}
-  - {fileID: 1940109903}
   FlickerLamp: {fileID: 13204545}
 --- !u!4 &1117215870
 Transform:

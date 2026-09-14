@@ -1,6 +1,8 @@
+using UnityEngine;
+
 namespace Door666.Runtime
 {
-    /// <summary>EditMode.unity: edits stage placements inside the shared field.</summary>
+    /// <summary>EditMode.unity: walk the field in first person, place items, and try the placed anomalies' rituals.</summary>
     public sealed class EditModeSceneController : SceneController
     {
         public PlacementEditor StageEditor { get; private set; }
@@ -14,13 +16,18 @@ namespace Door666.Runtime
         protected override void Enter()
         {
             Screen = GameScreen.Editing;
-            SetCursor(true);
             StageEditor.Open();
         }
 
         private void Update()
         {
-            if (Screen == GameScreen.Editing && !Input.IsRebinding) StageEditor.Tick();
+            if (Screen == GameScreen.Editing && !Input.IsRebinding) StageEditor.Tick(Time.deltaTime);
+        }
+
+        // Free the cursor when the window loses focus, as the Game scene pauses.
+        private void OnApplicationFocus(bool focus)
+        {
+            if (!focus && Screen == GameScreen.Editing && !Application.isBatchMode) StageEditor.SetMenuOpen(true);
         }
 
         protected override void OnDestroy()
