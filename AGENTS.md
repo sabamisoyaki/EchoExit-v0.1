@@ -7,7 +7,8 @@
 
 - 開発しているのは **`Rebuild/666Door`** です（独立した Unity 6000.3.10f1 / URP プロジェクト）。リポジトリ直下の `Assets/` などは旧 EchoExit なので、再構築の作業では変更しないでください。
 - ブランチは `feat/rebuild-666door` → `feat/scene-split` → `feat/first-person-editor` の順に積み重なっています。どれもまだ push していません。
-- 直下の `Assets/Scenes/MainScene.scenetemplate` はエディタが勝手に書き換えます。再構築のコミットに含めないでください。`Rebuild/666Door/Artifacts/`（テスト結果・スクショ）もコミットしません。
+- 旧 EchoExit からは、どこからも使われていないもの（URP テンプレートの残り、扉アセット `GVOZDY`、未使用の音声・旧形式 JSON など）を削除済みです。必要になったら Git 履歴から戻せます。
+- `Rebuild/666Door/Artifacts/`（テスト結果・スクショ）はコミットしません。
 - コミットはユーザーに頼まれたときだけ行います。メッセージは日本語の Conventional Commits（`feat:` / `fix:` / `docs:` など）で書きます。
 
 ## 2. 仕様の読み方
