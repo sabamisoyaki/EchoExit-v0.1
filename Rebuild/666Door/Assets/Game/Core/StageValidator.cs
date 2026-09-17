@@ -31,6 +31,18 @@ namespace Door666.Core
         public int MaximumAnomalies = 3;
         public bool IsUserStage = true;
         public float SpawnProtectionRadius = 2.5f;
+
+        /// <summary>Share (0–1) of each item's collision box inside other solid objects, aligned with the stage's items.
+        /// Measured by the runtime; null skips the overlap rules.</summary>
+        public IReadOnlyList<float> OverlapRatios;
+        /// <summary>No item may be buried deeper than this.</summary>
+        public float MaximumOverlapRatio = 0.75f;
+        /// <summary>Anomalies overlapping more than this count as heavily overlapped.</summary>
+        public float HeavyOverlapRatio = 0.25f;
+        /// <summary>Heavily overlapped anomalies are allowed only beyond this many clearly placed ones.</summary>
+        public int ClearAnomaliesRequired = 3;
+
+        public int AllowedHeavyAnomalies(int anomalies) => Math.Max(0, anomalies - ClearAnomaliesRequired);
     }
 
     public sealed class StageValidationResult
@@ -56,7 +68,7 @@ namespace Door666.Core
                 return result;
             }
 
-            int anomalies = 0, chasers = 0;
+            int anomalies = 0, chasers = 0, heavyAnomalies = 0;
             for (int index = 0; index < stage.items.Count; index++)
             {
                 var item = stage.items[index];
@@ -66,6 +78,13 @@ namespace Door666.Core
                 if (string.IsNullOrWhiteSpace(item.prefabId)) { result.Errors.Add(label + "Prefab IDが空です。"); continue; }
                 if (!item.position.IsFinite || !item.rotation.IsFinite)
                 { result.Errors.Add(label + "位置または回転が不正です。"); continue; }
+                if (context.OverlapRatios != null && index < context.OverlapRatios.Count)
+                {
+                    float overlap = context.OverlapRatios[index];
+                    if (overlap > context.MaximumOverlapRatio)
+                        result.Errors.Add(label + "ほかの物と" + Percent(overlap) + "重なっています。" + Percent(context.MaximumOverlapRatio) + "までにしてください。");
+                    if (item.isAnomaly && overlap > context.HeavyOverlapRatio) heavyAnomalies++;
+                }
                 StageDefinitionMetadata metadata = null;
                 bool known = definitions != null && definitions.TryGetValue(item.prefabId, out metadata) && metadata != null;
                 if (!known) result.Warnings.Add(label + "未対応のPrefab ID「" + item.prefabId + "」。データを保持します。");
@@ -92,8 +111,15 @@ namespace Door666.Core
 
             if (anomalies > context.MaximumAnomalies) result.Errors.Add("異変は" + context.MaximumAnomalies + "個まで配置できます。");
             if (chasers > 1) result.Errors.Add("追跡型の異変は1体まで配置できます。");
+            if (heavyAnomalies > context.AllowedHeavyAnomalies(anomalies))
+                result.Errors.Add(HeavyOverlapRule(context) + "（いま重なりの大きい異変 " + heavyAnomalies + " 個、異変 " + anomalies + " 個）");
             return result;
         }
+
+        public static string HeavyOverlapRule(StageValidationContext context) =>
+            "重なりが" + Percent(context.HeavyOverlapRatio) + "を超える異変は、重なりの小さい異変を" + context.ClearAnomaliesRequired + "個置いたうえで、それを超える分だけ置けます。";
+
+        public static string Percent(float ratio) => Math.Round(ratio * 100) + "%";
 
         private static StageBounds RotatedBounds(StageItem item, StageDefinitionMetadata metadata)
         {

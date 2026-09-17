@@ -73,5 +73,53 @@ namespace Door666.Tests
             Assert.That(scene.World.PlacedObjects.Any(placed => placed.PrefabId == "ChairPrefab" && Mathf.Approximately(placed.Data.rotation.y, 45)), Is.False);
             yield return new ExitPlayMode();
         }
+
+        [UnityTest]
+        public IEnumerator OverlappingAnomaliesAreAllowedBeyondThreeClearOnes()
+        {
+            EditorSceneManager.OpenScene(GameConstants.ScenePath(GameConstants.EditModeScene), OpenSceneMode.Single);
+            yield return new EnterPlayMode();
+            EditModeSceneController scene = null;
+            for (int frame = 0; frame < SceneTestUtility.MaxLoadFrames && !SceneTestUtility.IsReady(out scene); frame++) yield return null;
+            Assert.That(scene != null && scene.IsReady, Is.True, "EditModeSceneController did not become ready.");
+            var editor = scene.StageEditor;
+            var settings = scene.Settings;
+            Assert.That(settings.maximumAnomalies, Is.EqualTo(6));
+            Assert.That(settings.clearAnomaliesRequired, Is.EqualTo(3));
+
+            editor.New();
+            editor.SetCategory(true);
+            editor.Choose("changeColorBox");
+            // Column A spans x 3.47–4.23 at z 0.5; a box centred at x 3.45 is about 40% inside it.
+            Assert.That(editor.TryPlace(new Vector3(3.45f, 0, .5f), out string problem), Is.False, "A heavily overlapped anomaly needs three clear ones first.");
+            Assert.That(problem, Does.Contain("重なり"));
+
+            foreach (float x in new[] { -1.5f, 0f, 1.5f })
+                Assert.That(editor.TryPlace(new Vector3(x, 0, 3.5f), out problem), Is.True, problem);
+            Assert.That(editor.TryPlace(new Vector3(3.45f, 0, .5f), out problem), Is.True, problem);
+            float overlap = editor.OverlapOf(scene.World.PlacedObjects.Last());
+            Assert.That(overlap, Is.GreaterThan(settings.heavyOverlapRatio).And.LessThanOrEqualTo(settings.maximumOverlapRatio));
+            Assert.That(editor.TryPlace(new Vector3(-3.45f, 0, .5f), out problem), Is.True, problem);
+            Assert.That(editor.TryPlace(new Vector3(3.45f, 0, 6.9f), out problem), Is.True, problem);
+            Assert.That(scene.World.PlacedAnomalyCount, Is.EqualTo(6));
+            Assert.That(editor.TryPlace(new Vector3(0, 0, 6f), out problem), Is.False, "The anomaly cap still applies.");
+            Assert.That(problem, Does.Contain("6個"));
+
+            // Nothing may be buried almost entirely, not even ordinary furniture.
+            editor.SetCategory(false);
+            editor.Choose("changeColorBox");
+            Assert.That(editor.TryPlace(new Vector3(-3.85f, 0, 6.9f), out problem), Is.False);
+            Assert.That(problem, Does.Contain("重なりすぎ"));
+
+            // Position and yaw are kept as finely as they were aimed.
+            editor.Choose("ChairPrefab");
+            editor.SetPlacementYaw(17);
+            Assert.That(editor.TryPlace(new Vector3(.13f, 0, 9.87f), out problem), Is.True, problem);
+            var chair = scene.World.PlacedObjects.Last().Data;
+            Assert.That(chair.rotation.y, Is.EqualTo(17).Within(.01f));
+            Assert.That(chair.position.x, Is.EqualTo(.13f).Within(.001f));
+            Assert.That(chair.position.z, Is.EqualTo(9.87f).Within(.001f));
+            yield return new ExitPlayMode();
+        }
     }
 }

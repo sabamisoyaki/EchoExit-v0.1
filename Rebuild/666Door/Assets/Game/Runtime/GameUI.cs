@@ -11,7 +11,7 @@ namespace Door666.Runtime
 {
     public sealed class GameUI : MonoBehaviour
     {
-        private const string EditorControls = "Shift＋クリック  置く     R  回転     Delete  削除     左クリック  叩く     F5  保存     Tab  メニュー";
+        private const string EditorControls = "Shift＋クリック  置く     ホイール  向きを5°ずつ（Ctrl で 45°・0.25m 刻み）     R  45°回転     Delete  削除     左クリック  叩く     F5  保存     Tab  メニュー";
 
         private SceneController game;
         private string editorMessage = "";
@@ -178,7 +178,7 @@ namespace Door666.Runtime
         }
 
         /// <summary>Stage editing while walking: the crosshair, what will be placed, the latest message and the controls.</summary>
-        public void ShowEditorHud(int currentId, bool unsaved, string selection)
+        public void ShowEditorHud(int currentId, bool unsaved, string selection, string budget)
         {
             ClearMenu();
             hud.SetActive(true);
@@ -189,13 +189,14 @@ namespace Door666.Runtime
             menu = Panel(root, "Editor HUD", Color.clear, Vector2.zero, Vector2.one);
             Label(menu.transform, "部屋を編集  ステージ " + currentId + (unsaved ? "  ＊未保存" : ""), 22, new Vector2(.035f, .91f), new Vector2(.50f, .97f));
             Label(menu.transform, selection, 22, new Vector2(.50f, .91f), new Vector2(.965f, .97f), TextAlignmentOptions.Right);
+            Label(menu.transform, budget, 18, new Vector2(.035f, .86f), new Vector2(.60f, .91f)).color = muted;
             editorStatus = Label(menu.transform, editorMessage, 20, new Vector2(.16f, .16f), new Vector2(.84f, .24f), TextAlignmentOptions.Center);
             AutoSize(editorStatus, 14);
             Label(menu.transform, EditorControls, 17, new Vector2(.03f, .025f), new Vector2(.97f, .075f), TextAlignmentOptions.Center).color = muted;
         }
 
         /// <summary>The Tab menu: choose what to place, switch stages, save, or leave.</summary>
-        public void ShowEditorMenu(PlacementEditor editor, int currentId, bool unsaved, bool anomalyCategory, string selectedPrefab)
+        public void ShowEditorMenu(PlacementEditor editor, int currentId, bool unsaved, bool anomalyCategory, string selectedPrefab, string budget)
         {
             BeginMenu(true);
             var panel = Panel(menu.transform, "Stage editing", new Color(.025f, .033f, .027f, .97f), new Vector2(.14f, .05f), new Vector2(.86f, .95f));
@@ -212,7 +213,8 @@ namespace Door666.Runtime
             ButtonAt(panel.transform, "新規", new Vector2(.35f, .73f), new Vector2(.47f, .80f), () => editor.New());
             ButtonAt(panel.transform, "保存 [F5]", new Vector2(.49f, .73f), new Vector2(.67f, .80f), () => editor.Save(stageId.text));
 
-            Label(panel.transform, "置くもの", 18, new Vector2(.05f, .64f), new Vector2(.30f, .69f)).color = muted;
+            Label(panel.transform, "置くもの", 18, new Vector2(.05f, .64f), new Vector2(.14f, .69f)).color = muted;
+            Label(panel.transform, budget, 16, new Vector2(.15f, .64f), new Vector2(.50f, .69f)).color = muted;
             ButtonAt(panel.transform, anomalyCategory ? "通常" : "● 通常", new Vector2(.51f, .63f), new Vector2(.72f, .70f), () => editor.SetCategory(false));
             ButtonAt(panel.transform, anomalyCategory ? "● 異変" : "異変", new Vector2(.74f, .63f), new Vector2(.95f, .70f), () => editor.SetCategory(true));
             int index = 0;
@@ -232,6 +234,9 @@ namespace Door666.Runtime
             ButtonAt(panel.transform, "閉じる [Tab]", new Vector2(.60f, .045f), new Vector2(.76f, .115f), () => editor.SetMenuOpen(false));
             ButtonAt(panel.transform, "タイトルへ（未保存は破棄）", new Vector2(.78f, .045f), new Vector2(.95f, .115f), () => game.ShowTitle());
         }
+
+        /// <summary>One line under the crosshair: the door action while exploring, placement details while editing.</summary>
+        public void Prompt(string text) => prompt.text = text;
 
         public void EditorMessage(string message)
         {

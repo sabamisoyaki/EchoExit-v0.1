@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 25cf8c31dacf7c842bb1d89f8c5d3140, type: 3}
   m_Name: GameSettings
   m_EditorClassIdentifier: Door666.Runtime::Door666.Runtime.GameSettings
-  maximumAnomalies: 3
+  maximumAnomalies: 6
   roundSeconds: 180
   requiredCorrectAnswers: 6
   anomalyProbability: 0.666
@@ -20,3 +20,6 @@ MonoBehaviour:
   interactionDistance: 4
   feedbackSeconds: 1.6
   subtitles: 1
+  maximumOverlapRatio: 0.75
+  heavyOverlapRatio: 0.25
+  clearAnomaliesRequired: 3

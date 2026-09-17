@@ -15,9 +15,22 @@ namespace Door666.Runtime
     public sealed class PlacementEditor
     {
         private const float PlacementReach = 8f;
+        // Samples per axis when measuring how much of an item's collision box is inside other objects.
+        private const int OverlapSamples = 5;
+        private const float FineYawStep = 5f;
+        private const float CoarseYawStep = 45f;
+        private const float CoarseGrid = .25f;
         private static readonly Color ValidColor = new Color(.38f, .96f, .74f);
+        private static readonly Color HeavyColor = new Color(1f, .78f, .25f);
         private static readonly Color InvalidColor = new Color(1f, .30f, .22f);
-        private static readonly Color SelectionColor = new Color(1f, .79f, .36f);
+        private static readonly Color SelectionColor = new Color(.55f, .80f, 1f);
+
+        private struct PlacementCheck
+        {
+            public string Problem;
+            public float Overlap;
+            public bool Heavy;
+        }
 
         private readonly SceneController game;
         private readonly AnomalyActorSet anomalies;
@@ -184,25 +197,28 @@ namespace Door666.Runtime
             SetMenuOpen(false);
         }
 
-        /// <summary>Places the selected item at a floor point, snapped like manual placement. The item is live immediately.</summary>
+        /// <summary>Places the selected item at a floor point (1 cm precision, current yaw). The item is live immediately.</summary>
         public bool TryPlace(Vector3 floorPoint, out string problem)
         {
             problem = null;
             if (!open || selectedPrefab == null) { problem = "置くものが選ばれていません。"; return false; }
-            var item = PendingItem(floorPoint);
-            problem = PlacementProblem(item);
+            var item = PendingItem(floorPoint, false);
+            problem = Check(item, null).Problem;
             if (problem != null) return false;
             Place(item);
             return true;
         }
 
-        public void Rotate(StageObject target)
+        /// <summary>Sets the yaw used for the next placement, in degrees.</summary>
+        public void SetPlacementYaw(float degrees) => placementYaw = Mathf.Repeat(degrees, 360);
+
+        public void Rotate(StageObject target, float degrees = CoarseYawStep)
         {
             if (!open || target == null || !game.World.PlacedObjects.Contains(target)) return;
             var item = target.Data;
             var previous = item.rotation;
-            item.rotation = new Float3(previous.x, Mathf.Repeat(previous.y + 45, 360), previous.z);
-            string problem = PlacementProblem(item);
+            item.rotation = new Float3(previous.x, Mathf.Repeat(previous.y + degrees, 360), previous.z);
+            string problem = Check(item, target).Problem;
             if (problem != null)
             {
                 item.rotation = previous;
@@ -211,8 +227,11 @@ namespace Door666.Runtime
             }
             Respawn(target);
             game.World.RebuildNavigation();
-            MarkDirty(game.World.Catalog.DisplayName(item.prefabId) + "を回転しました。");
+            MarkDirty(game.World.Catalog.DisplayName(item.prefabId) + "の向きを " + Mathf.RoundToInt(item.rotation.y) + "° にしました。");
         }
+
+        /// <summary>Share (0–1) of a placement's collision box inside walls, furniture and other placements.</summary>
+        public float OverlapOf(StageObject placed) => placed == null ? 0 : OverlapRatio(placed.Data, placed);
 
         public void Delete(StageObject target)
         {
@@ -234,12 +253,13 @@ namespace Door666.Runtime
             { game.UI.EditorMessage("ステージ番号は1以上の整数にしてください。"); return; }
             var candidate = draft.Clone();
             candidate.sceneId = id;
-            var context = new StageValidationContext
+            var context = ValidationContext();
+            // Overlaps are measured on the placed objects; the clone keeps the draft's item order.
+            context.OverlapRatios = draft.items.Select(item =>
             {
-                MaximumAnomalies = game.Settings.maximumAnomalies,
-                IsUserStage = true,
-                PlayerSpawn = ToFloat(WorldBuilder.SpawnPosition)
-            };
+                var placed = game.World.PlacedObjects.FirstOrDefault(existing => existing.Data == item);
+                return placed == null ? 0f : OverlapRatio(item, placed);
+            }).ToList();
             AddDoorBounds(game.World.ForwardDoor, context);
             AddDoorBounds(game.World.BackDoor, context);
             var result = StageValidator.Validate(candidate, metadata, context);
@@ -313,18 +333,23 @@ namespace Door666.Runtime
             if (selectedPrefab == null)
             {
                 HideGuides();
+                game.UI.Prompt("");
                 game.UI.EditorMessage("Tab でメニューを開き、置くものを選んでください。");
                 return;
             }
-            if (keyboard.rKey.wasPressedThisFrame) placementYaw = Mathf.Repeat(placementYaw + 45, 360);
-            if (!TryAimPoint(view, out var point)) { HideGuides(); return; }
-            var item = PendingItem(point);
+            bool coarse = keyboard.ctrlKey.isPressed;
+            if (keyboard.rKey.wasPressedThisFrame) placementYaw = Mathf.Repeat(placementYaw + CoarseYawStep, 360);
+            placementYaw = Mathf.Repeat(placementYaw + ScrollSteps() * (coarse ? CoarseYawStep : FineYawStep), 360);
+            if (!TryAimPoint(view, out var point)) { HideGuides(); game.UI.Prompt(""); return; }
+            var item = PendingItem(point, coarse);
             preview.transform.SetPositionAndRotation(ToVector(item.position), Quaternion.Euler(ToVector(item.rotation)));
             preview.gameObject.SetActive(true);
-            string problem = PlacementProblem(item);
-            DrawOutline(item, problem == null ? ValidColor : InvalidColor);
+            var check = Check(item, null);
+            DrawOutline(item, check.Problem != null ? InvalidColor : check.Heavy ? HeavyColor : ValidColor);
+            game.UI.Prompt("重なり " + StageValidator.Percent(check.Overlap) + (check.Heavy ? "（大）" : "")
+                + "     向き " + Mathf.RoundToInt(item.rotation.y) + "°" + (coarse ? "     0.25m・45°刻み" : ""));
             if (!clicked) return;
-            if (problem != null) game.UI.EditorMessage(problem);
+            if (check.Problem != null) game.UI.EditorMessage(check.Problem);
             else Place(item);
         }
 
@@ -337,12 +362,24 @@ namespace Door666.Runtime
             if (target == null || !game.World.PlacedObjects.Contains(target))
             {
                 if (outline != null) outline.enabled = false;
+                game.UI.Prompt("");
                 return;
             }
             DrawOutline(target.Data, SelectionColor);
+            game.UI.Prompt(game.World.Catalog.DisplayName(target.PrefabId) + (target.IsAnomaly ? "（異変）" : "")
+                + "     重なり " + StageValidator.Percent(OverlapOf(target)) + "     向き " + Mathf.RoundToInt(target.Data.rotation.y) + "°");
             if (keyboard == null) return;
-            if (keyboard.rKey.wasPressedThisFrame) Rotate(target);
+            int steps = ScrollSteps();
+            if (keyboard.rKey.wasPressedThisFrame) Rotate(target, CoarseYawStep);
+            else if (steps != 0) Rotate(target, steps * (keyboard.ctrlKey.isPressed ? CoarseYawStep : FineYawStep));
             else if (keyboard.deleteKey.wasPressedThisFrame) Delete(target);
+        }
+
+        private static int ScrollSteps()
+        {
+            var mouse = Mouse.current;
+            float scroll = mouse == null ? 0 : mouse.scroll.ReadValue().y;
+            return scroll > .01f ? 1 : scroll < -.01f ? -1 : 0;
         }
 
         /// <summary>The floor point under the crosshair, pulled back in front of any wall or object in between.</summary>
@@ -358,26 +395,74 @@ namespace Door666.Runtime
             return true;
         }
 
-        private StageItem PendingItem(Vector3 floorPoint)
+        private StageItem PendingItem(Vector3 floorPoint, bool coarse)
         {
             float height = anchorHeights.TryGetValue(selectedPrefab, out float anchor) ? anchor : .5f;
+            float grid = coarse ? CoarseGrid : .01f;
+            float yaw = coarse ? Mathf.Repeat(Mathf.Round(placementYaw / CoarseYawStep) * CoarseYawStep, 360) : placementYaw;
             return new StageItem
             {
                 prefabId = selectedPrefab,
                 isAnomaly = category,
-                position = new Float3(Mathf.Round(floorPoint.x * 4) / 4, height, Mathf.Round(floorPoint.z * 4) / 4),
-                rotation = new Float3(0, placementYaw, 0)
+                position = new Float3(Mathf.Round(floorPoint.x / grid) * grid, height, Mathf.Round(floorPoint.z / grid) * grid),
+                rotation = new Float3(0, yaw, 0)
             };
         }
 
-        private string PlacementProblem(StageItem item)
+        /// <summary>
+        /// Items may overlap walls, furniture and each other, but not doors, the player, or beyond the floor.
+        /// Anomalies share a budget: heavily overlapped ones are allowed only beyond the clearly placed ones (see StageValidator).
+        /// </summary>
+        /// <param name="self">The placement being rotated, excluded from its own overlap; null for a new item.</param>
+        private PlacementCheck Check(StageItem item, StageObject self)
         {
-            if (!FitsField(item)) return "床の範囲の外には置けません。";
-            if (IntersectsArchitecture(item)) return "壁や扉と重なる場所には置けません。";
+            var check = new PlacementCheck();
             var body = game.Player.GetComponent<CharacterController>();
-            if (body != null && WorldBounds(item).Intersects(body.bounds)) return "自分と重なる場所には置けません。";
-            return null;
+            if (!FitsField(item)) check.Problem = "床の範囲の外には置けません。";
+            else if (IntersectsDoor(item)) check.Problem = "扉と重なる場所には置けません。";
+            else if (body != null && WorldBounds(item).Intersects(body.bounds)) check.Problem = "自分と重なる場所には置けません。";
+            if (check.Problem != null) return check;
+
+            var context = ValidationContext();
+            check.Overlap = OverlapRatio(item, self);
+            check.Heavy = item.isAnomaly && check.Overlap > context.HeavyOverlapRatio;
+            if (check.Overlap > context.MaximumOverlapRatio)
+            {
+                check.Problem = "重なりすぎています（" + StageValidator.Percent(check.Overlap) + "）。" + StageValidator.Percent(context.MaximumOverlapRatio) + "までにしてください。";
+                return check;
+            }
+            if (!item.isAnomaly) return check;
+
+            CountAnomalies(self, out int anomalies, out int heavy);
+            anomalies++;
+            if (check.Heavy) heavy++;
+            if (self == null && anomalies > context.MaximumAnomalies) check.Problem = "異変は" + context.MaximumAnomalies + "個まで置けます。";
+            else if (heavy > context.AllowedHeavyAnomalies(anomalies)) check.Problem = StageValidator.HeavyOverlapRule(context);
+            return check;
         }
+
+        private void CountAnomalies(StageObject except, out int anomalies, out int heavy)
+        {
+            anomalies = 0;
+            heavy = 0;
+            float heavyRatio = game.Settings.heavyOverlapRatio;
+            foreach (var placed in game.World.PlacedObjects)
+            {
+                if (placed == null || placed == except || !placed.IsAnomaly) continue;
+                anomalies++;
+                if (OverlapRatio(placed.Data, placed) > heavyRatio) heavy++;
+            }
+        }
+
+        private StageValidationContext ValidationContext() => new StageValidationContext
+        {
+            MaximumAnomalies = game.Settings.maximumAnomalies,
+            MaximumOverlapRatio = game.Settings.maximumOverlapRatio,
+            HeavyOverlapRatio = game.Settings.heavyOverlapRatio,
+            ClearAnomaliesRequired = game.Settings.clearAnomaliesRequired,
+            IsUserStage = true,
+            PlayerSpawn = ToFloat(WorldBuilder.SpawnPosition)
+        };
 
         private void OnRecognized(AnomalyActor actor)
         {
@@ -413,9 +498,13 @@ namespace Door666.Runtime
         private void RefreshUI()
         {
             if (!open || draft == null) return;
-            if (MenuOpen) game.UI.ShowEditorMenu(this, draft.sceneId, dirty, category, selectedPrefab);
+            var context = ValidationContext();
+            CountAnomalies(null, out int anomalies, out int heavy);
+            string budget = "異変 " + anomalies + " / " + context.MaximumAnomalies
+                + "     重なりの大きい異変 " + heavy + " / " + context.AllowedHeavyAnomalies(anomalies);
+            if (MenuOpen) game.UI.ShowEditorMenu(this, draft.sceneId, dirty, category, selectedPrefab, budget);
             else game.UI.ShowEditorHud(draft.sceneId, dirty, selectedPrefab == null ? "置くもの：未選択（Tab で選ぶ）"
-                : "置くもの：" + game.World.Catalog.DisplayName(selectedPrefab) + (category ? "（異変）" : "（通常）"));
+                : "置くもの：" + game.World.Catalog.DisplayName(selectedPrefab) + (category ? "（異変）" : "（通常）"), budget);
         }
 
         private void HideGuides()
@@ -480,18 +569,61 @@ namespace Door666.Runtime
                 && bounds.min.y >= -.025f && bounds.max.y <= field.max.y;
         }
 
-        private bool IntersectsArchitecture(StageItem item)
+        private bool IntersectsDoor(StageItem item)
         {
             if (!metadata.TryGetValue(item.prefabId, out var data)) return false;
             var rotation = Quaternion.Euler(ToVector(item.rotation));
             var center = ToVector(item.position) + rotation * ToVector(data.BoundsCenterOffset);
-            var half = ToVector(data.HalfExtents) * .97f;
+            foreach (var collider in Physics.OverlapBox(center, ToVector(data.HalfExtents) * .97f, rotation, ~0, QueryTriggerInteraction.Ignore))
+                if (collider != null && collider.GetComponentInParent<DoorTarget>() != null) return true;
+            return false;
+        }
+
+        /// <summary>Share (0–1) of the item's collision box inside other solid objects, sampled on a fixed grid so a pose always
+        /// measures the same. The floor, the player and the item itself do not count.</summary>
+        private float OverlapRatio(StageItem item, StageObject self)
+        {
+            if (!metadata.TryGetValue(item.prefabId, out var data)) return 0;
+            var rotation = Quaternion.Euler(ToVector(item.rotation));
+            var center = ToVector(item.position) + rotation * ToVector(data.BoundsCenterOffset);
+            var half = ToVector(data.HalfExtents);
+            var solids = new List<Collider>();
             foreach (var collider in Physics.OverlapBox(center, half, rotation, ~0, QueryTriggerInteraction.Ignore))
             {
-                if (collider == null || collider.bounds.max.y <= .05f || collider.GetComponentInParent<StageObject>() != null) continue;
-                if (collider.transform.IsChildOf(game.World.Root.transform)) return true;
+                if (collider == null || collider.bounds.max.y <= .05f || collider is CharacterController) continue;
+                if (self != null && collider.transform.IsChildOf(self.transform)) continue;
+                solids.Add(collider);
             }
-            return false;
+            if (solids.Count == 0) return 0;
+
+            int inside = 0;
+            for (int x = 0; x < OverlapSamples; x++)
+            for (int y = 0; y < OverlapSamples; y++)
+            for (int z = 0; z < OverlapSamples; z++)
+            {
+                var local = new Vector3(Sample(half.x, x), Sample(half.y, y), Sample(half.z, z));
+                var point = center + rotation * local;
+                foreach (var solid in solids)
+                {
+                    if (!Contains(solid, point)) continue;
+                    inside++;
+                    break;
+                }
+            }
+            return inside / (float)(OverlapSamples * OverlapSamples * OverlapSamples);
+        }
+
+        private static float Sample(float halfExtent, int index) => -halfExtent + halfExtent * 2 * (index + .5f) / OverlapSamples;
+
+        private static bool Contains(Collider collider, Vector3 point)
+        {
+            if (collider is BoxCollider box)
+            {
+                var local = box.transform.InverseTransformPoint(point) - box.center;
+                var extents = box.size * .5f;
+                return Mathf.Abs(local.x) <= extents.x && Mathf.Abs(local.y) <= extents.y && Mathf.Abs(local.z) <= extents.z;
+            }
+            return (Physics.ClosestPoint(point, collider, collider.transform.position, collider.transform.rotation) - point).sqrMagnitude < 1e-6f;
         }
 
         private void DrawOutline(StageItem item, Color color)

@@ -113,6 +113,39 @@ namespace Door666.Tests
         }
 
         [Test]
+        public void HeavilyOverlappedAnomaliesAreAllowedOnlyBeyondTheClearOnes()
+        {
+            var context = Context();
+            context.MaximumAnomalies = 6;
+            var stage = Room(Item("known", true, 8), Item("known", true, 9), Item("known", true, 10), Item("known", true, 11), Item("known", false, 12));
+            // Four anomalies leave room for one heavily overlapped anomaly; ordinary furniture never counts.
+            context.OverlapRatios = new[] { 0f, 0.1f, 0.25f, 0.6f, 0.7f };
+            Assert.That(StageValidator.Validate(stage, Definitions(), context).IsValid, Is.True);
+            context.OverlapRatios = new[] { 0f, 0.3f, 0.25f, 0.6f, 0f };
+            var tooMany = StageValidator.Validate(stage, Definitions(), context);
+            Assert.That(tooMany.IsValid, Is.False);
+            Assert.That(tooMany.Errors, Has.Some.Contains("重なりの大きい異変 2 個"));
+        }
+
+        [Test]
+        public void NoAnomalyMayBeHeavilyOverlappedUntilTheClearOnesArePlaced()
+        {
+            var context = Context();
+            context.OverlapRatios = new[] { 0f, 0.5f };
+            Assert.That(StageValidator.Validate(Room(Item("known", true, 8), Item("known", true, 9)), Definitions(), context).IsValid, Is.False);
+        }
+
+        [Test]
+        public void ItemsBuriedBeyondTheMaximumAreRejectedEvenWhenOrdinary()
+        {
+            var context = Context();
+            context.OverlapRatios = new[] { 0.76f };
+            var result = StageValidator.Validate(Room(Item("known", false, 8)), Definitions(), context);
+            Assert.That(result.IsValid, Is.False);
+            Assert.That(result.Errors, Has.Some.Contains("76%"));
+        }
+
+        [Test]
         public void InvalidCoordinatesAndMissingPrefabIdsAreRejected()
         {
             var invalid = Item("known", true, 8);
