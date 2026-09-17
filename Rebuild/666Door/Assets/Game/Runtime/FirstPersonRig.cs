@@ -1,12 +1,17 @@
+using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
 namespace Door666.Runtime
 {
+    /// <summary>First-person body and eyes. Collider and camera settings live on Assets/Prefabs/Player.prefab,
+    /// which every screen scene places; tune them there (or per scene as overrides).</summary>
     [RequireComponent(typeof(CharacterController))]
     public sealed class FirstPersonRig : MonoBehaviour
     {
-        public Camera View { get; private set; }
+        [SerializeField] private Camera view;
+
+        public Camera View => view;
         public float Speed { get; private set; }
         public float MouseSensitivity { get; set; } = .085f;
         public float GamepadSensitivity { get; set; } = 125f;
@@ -18,21 +23,8 @@ namespace Door666.Runtime
         public void Initialize()
         {
             controller = GetComponent<CharacterController>();
-            controller.height = 1.75f;
-            controller.radius = .28f;
-            controller.center = Vector3.up * .875f;
-            controller.stepOffset = .22f;
-            controller.skinWidth = .025f;
-            var eye = new GameObject("Eyes", typeof(Camera), typeof(AudioListener));
-            eye.transform.SetParent(transform, false);
-            eye.transform.localPosition = Vector3.up * 1.6f;
-            eye.tag = "MainCamera";
-            View = eye.GetComponent<Camera>();
-            View.fieldOfView = 72f;
-            View.nearClipPlane = .05f;
-            View.farClipPlane = 70f;
-            View.backgroundColor = new Color(.018f, .02f, .013f);
-            View.clearFlags = CameraClearFlags.SolidColor;
+            if (view == null) view = GetComponentInChildren<Camera>(true);
+            if (view == null) throw new InvalidOperationException("プレイヤー「" + name + "」にカメラがありません。");
             MouseSensitivity = PlayerPrefs.GetFloat(GameConstants.SensitivityPreference, .085f);
             GamepadSensitivity = PlayerPrefs.GetFloat(GameConstants.GamepadSensitivityPreference, 125f);
         }

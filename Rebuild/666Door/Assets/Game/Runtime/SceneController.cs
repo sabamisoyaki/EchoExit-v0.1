@@ -25,17 +25,21 @@ namespace Door666.Runtime
         public AnomalyCatalog Definitions { get; private set; }
         public bool SubtitlesEnabled { get; set; }
 
+        [Tooltip("The first-person rig placed in this scene from Assets/Prefabs/Player.prefab.")]
+        [SerializeField] private FirstPersonRig player;
+
         private StageLoadResult loadedStages;
         private AudioClip ambienceClip;
 
         protected virtual void Awake()
         {
+            if (player == null)
+                throw new System.InvalidOperationException(gameObject.scene.name + " にプレイヤーが配置されていません。メニュー「666号扉 → プロジェクトを初期化」を実行してください。");
             Settings = Resources.Load<GameSettings>(GameConstants.SettingsResource);
             if (Settings == null) Settings = ScriptableObject.CreateInstance<GameSettings>();
             Definitions = AnomalyCatalog.FromJson(Resources.Load<TextAsset>(GameConstants.DefinitionsResource).text);
             Input = new PlayerInputReader();
-            Player = new GameObject("Player", typeof(CharacterController)).AddComponent<FirstPersonRig>();
-            SceneManager.MoveGameObjectToScene(Player.gameObject, gameObject.scene);
+            Player = player;
             Player.Initialize();
             var ui = new GameObject("Interface", typeof(RectTransform));
             SceneManager.MoveGameObjectToScene(ui, gameObject.scene);

@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "com.unity.ai.assistant": "2.19.0-pre.2",
     "com.unity.ai.navigation": "2.0.10",
     "com.unity.inputsystem": "1.18.0",
     "com.unity.nuget.newtonsoft-json": "3.2.2",

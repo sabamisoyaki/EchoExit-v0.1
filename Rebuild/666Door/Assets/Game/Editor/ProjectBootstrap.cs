@@ -314,9 +314,10 @@ namespace Door666.Editor
             // The field comes first: screen scenes do not reference it, but it must exist before anything is played.
             string fieldPath = GameConstants.ScenePath(GameConstants.FieldScene);
             if (!File.Exists(fieldPath)) FieldSceneBuilder.Create(fieldPath);
-            EnsureScreenScene(GameConstants.TitleScene, typeof(TitleSceneController));
-            EnsureScreenScene(GameConstants.GameScene, typeof(GameSceneController));
-            EnsureScreenScene(GameConstants.EditModeScene, typeof(EditModeSceneController));
+            // Title frames the backdrop from its authored player pose; the other screens move the player to the spawn point.
+            EnsureScreenScene(GameConstants.TitleScene, typeof(TitleSceneController), new Vector3(1.8f, .05f, -4.5f), -8f);
+            EnsureScreenScene(GameConstants.GameScene, typeof(GameSceneController), WorldBuilder.SpawnPosition, 0);
+            EnsureScreenScene(GameConstants.EditModeScene, typeof(EditModeSceneController), WorldBuilder.SpawnPosition, 0);
 
             var scenes = new EditorBuildSettingsScene[GameConstants.BuildScenes.Length];
             for (int i = 0; i < scenes.Length; i++)
@@ -324,13 +325,73 @@ namespace Door666.Editor
             EditorBuildSettings.scenes = scenes;
         }
 
-        private static void EnsureScreenScene(string name, Type controller)
+        /// <summary>Creates the screen scene if missing, and gives an existing scene a player when it has none.
+        /// Scenes that already have their controller and player are left untouched.</summary>
+        private static void EnsureScreenScene(string name, Type controllerType, Vector3 playerPosition, float playerYaw)
         {
             string path = GameConstants.ScenePath(name);
-            if (File.Exists(path)) return;
-            var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
-            new GameObject(name, controller);
-            EditorSceneManager.SaveScene(scene, path);
+            bool exists = File.Exists(path);
+            var scene = exists
+                ? EditorSceneManager.OpenScene(path, OpenSceneMode.Single)
+                : EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            bool changed = !exists;
+            var controller = Object.FindFirstObjectByType(controllerType) as SceneController;
+            if (controller == null)
+            {
+                controller = (SceneController)new GameObject(name, controllerType).GetComponent(controllerType);
+                changed = true;
+            }
+            var binding = new SerializedObject(controller);
+            var player = binding.FindProperty("player");
+            if (player.objectReferenceValue == null)
+            {
+                var rig = Object.FindFirstObjectByType<FirstPersonRig>();
+                if (rig == null)
+                {
+                    var instance = (GameObject)PrefabUtility.InstantiatePrefab(EnsurePlayerPrefab(), scene);
+                    instance.transform.SetPositionAndRotation(playerPosition, Quaternion.Euler(0, playerYaw, 0));
+                    rig = instance.GetComponent<FirstPersonRig>();
+                }
+                player.objectReferenceValue = rig;
+                binding.ApplyModifiedPropertiesWithoutUndo();
+                changed = true;
+            }
+            if (changed) EditorSceneManager.SaveScene(scene, path);
+        }
+
+        private const string PlayerPrefabPath = "Assets/Prefabs/Player.prefab";
+
+        /// <summary>The first-person rig every screen scene places: collider, eyes camera and audio listener.</summary>
+        private static GameObject EnsurePlayerPrefab()
+        {
+            var existing = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+            if (existing != null) return existing;
+            EnsureFolder("Assets/Prefabs");
+            var root = new GameObject("Player", typeof(CharacterController), typeof(FirstPersonRig));
+            try
+            {
+                var body = root.GetComponent<CharacterController>();
+                body.height = 1.75f;
+                body.radius = .28f;
+                body.center = Vector3.up * .875f;
+                body.stepOffset = .22f;
+                body.skinWidth = .025f;
+                var eyes = new GameObject("Eyes", typeof(Camera), typeof(AudioListener), typeof(UniversalAdditionalCameraData));
+                eyes.tag = "MainCamera";
+                eyes.transform.SetParent(root.transform, false);
+                eyes.transform.localPosition = Vector3.up * 1.6f;
+                var camera = eyes.GetComponent<Camera>();
+                camera.fieldOfView = 72f;
+                camera.nearClipPlane = .05f;
+                camera.farClipPlane = 70f;
+                camera.clearFlags = CameraClearFlags.SolidColor;
+                camera.backgroundColor = new Color(.018f, .02f, .013f);
+                var rig = new SerializedObject(root.GetComponent<FirstPersonRig>());
+                rig.FindProperty("view").objectReferenceValue = camera;
+                rig.ApplyModifiedPropertiesWithoutUndo();
+                return PrefabUtility.SaveAsPrefabAsset(root, PlayerPrefabPath);
+            }
+            finally { Object.DestroyImmediate(root); }
         }
 
         internal static Material EnsureSurfaceMaterial(string folder, SurfaceSpec spec)

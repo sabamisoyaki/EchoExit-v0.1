@@ -10,7 +10,7 @@ namespace Door666.Runtime
         {
             Screen = GameScreen.Title;
             World.Build(new StageData { sceneId = 1 }, false, 0);
-            Player.Teleport(new Vector3(1.8f, .05f, -4.5f), -8f);
+            // The backdrop is framed by where the player (camera) is placed in Title.unity.
             SetCursor(true);
             UI.ShowTitle();
         }
