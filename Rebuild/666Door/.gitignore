@@ -1,9 +1,24 @@
+# 666Door（再構築プロジェクト）用。リポジトリ直下の .gitignore も併せて効きます。
+
+# Unity が自動生成するもの
 /Library/
 /Temp/
 /Obj/
 /Logs/
 /Builds/
+/Build/
 /UserSettings/
+/MemoryCaptures/
+/Recordings/
+
+# テストランナーが一時的に作るシーン
+InitTestScene*.unity*
+
+# IDE の生成物
 *.csproj
 *.sln*
+*.user
 *.log
+
+# テスト結果・スクリーンショット（AGENTS.md の申し送りによりコミットしない）
+/Artifacts/
