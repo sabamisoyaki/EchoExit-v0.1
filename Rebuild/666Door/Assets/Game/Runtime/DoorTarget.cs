@@ -8,6 +8,5 @@ namespace Door666.Runtime
     {
         public bool IsForward;
         public bool IsFinalExit;
-        public string InteractionLabel => IsFinalExit ? "666号扉を開ける" : IsForward ? "前へ進む" : "引き返す";
     }
 }

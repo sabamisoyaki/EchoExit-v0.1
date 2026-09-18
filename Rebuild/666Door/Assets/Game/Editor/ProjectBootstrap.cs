@@ -40,9 +40,12 @@ namespace Door666.Editor
             ConfigureRendering();
             ConfigureJapaneseFont();
             EnsureSettings();
+            EnsureSoundLibrary();
             ExportBearVisual();
             EnsureCatalogMaterials();
+            InterfaceBuilder.EnsurePrefabs();
             EnsureScenes();
+            AddFontCharacters();
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
             if (!Application.isBatchMode) EditorSceneManager.OpenScene(GameConstants.ScenePath(GameConstants.TitleScene), OpenSceneMode.Single);
@@ -168,10 +171,6 @@ namespace Door666.Editor
             var serialized = new SerializedObject(font);
             SetBoolean(serialized, "m_ClearDynamicDataOnBuild", false);
             serialized.ApplyModifiedPropertiesWithoutUndo();
-            font.TryAddCharacters(CollectVisibleCharacters(), out string missing);
-            if (!string.IsNullOrEmpty(missing)) Debug.LogWarning("日本語フォントに未収録の文字: " + missing);
-            foreach (var atlas in font.atlasTextures)
-                if (atlas != null && string.IsNullOrEmpty(AssetDatabase.GetAssetPath(atlas))) AssetDatabase.AddObjectToAsset(atlas, font);
             EditorUtility.SetDirty(font);
 
             var settings = TMP_Settings.instance;
@@ -244,6 +243,19 @@ namespace Door666.Editor
             return Encoding.ASCII.GetString(header, offset, (end < 0 ? offset + length : end) - offset);
         }
 
+        /// <summary>Bakes every character the game can show into the font atlas: code, stage data and the UI prefabs.
+        /// Runs after the prefabs exist; characters added later by hand are still rendered through the dynamic atlas.</summary>
+        internal static void AddFontCharacters()
+        {
+            var font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FontPath);
+            if (font == null) throw new InvalidOperationException("日本語フォントがありません: " + FontPath);
+            font.TryAddCharacters(CollectVisibleCharacters(), out string missing);
+            if (!string.IsNullOrEmpty(missing)) Debug.LogWarning("日本語フォントに未収録の文字: " + missing);
+            foreach (var atlas in font.atlasTextures)
+                if (atlas != null && string.IsNullOrEmpty(AssetDatabase.GetAssetPath(atlas))) AssetDatabase.AddObjectToAsset(atlas, font);
+            EditorUtility.SetDirty(font);
+        }
+
         private static string CollectVisibleCharacters()
         {
             var characters = new SortedSet<char>();
@@ -252,6 +264,17 @@ namespace Door666.Editor
                 foreach (var c in File.ReadAllText(path, Encoding.UTF8)) if (!char.IsControl(c)) characters.Add(c);
             foreach (var path in Directory.GetFiles("Assets/Resources", "*.json", SearchOption.AllDirectories))
                 foreach (var c in File.ReadAllText(path, Encoding.UTF8)) if (!char.IsControl(c)) characters.Add(c);
+            // Wording edited in the UI prefabs: label texts and the texts set on each screen's component.
+            if (AssetDatabase.IsValidFolder(InterfaceBuilder.Folder))
+                foreach (var guid in AssetDatabase.FindAssets("t:Prefab", new[] { InterfaceBuilder.Folder }))
+                    foreach (var component in AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GUIDToAssetPath(guid)).GetComponentsInChildren<Component>(true))
+                    {
+                        if (component == null) continue;
+                        var property = new SerializedObject(component).GetIterator();
+                        while (property.Next(true))
+                            if (property.propertyType == SerializedPropertyType.String)
+                                foreach (var c in property.stringValue) if (!char.IsControl(c)) characters.Add(c);
+                    }
             foreach (char c in "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんアイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン０１２３４５６７８９、。！？「」『』［］（）・ー…↑↓←→") characters.Add(c);
             var result = new StringBuilder(characters.Count);
             foreach (var c in characters) result.Append(c);
@@ -264,6 +287,27 @@ namespace Door666.Editor
             if (AssetDatabase.LoadAssetAtPath<GameSettings>(path) != null) return;
             var settings = ScriptableObject.CreateInstance<GameSettings>();
             AssetDatabase.CreateAsset(settings, path);
+        }
+
+        /// <summary>Creates SoundLibrary.asset and lists every sound in it, so a clip can be assigned to each by hand.
+        /// Assigned clips and volumes are kept.</summary>
+        internal static void EnsureSoundLibrary()
+        {
+            string path = "Assets/Resources/" + GameConstants.SoundsResource + ".asset";
+            var library = AssetDatabase.LoadAssetAtPath<SoundLibrary>(path);
+            if (library == null)
+            {
+                library = ScriptableObject.CreateInstance<SoundLibrary>();
+                AssetDatabase.CreateAsset(library, path);
+            }
+            bool changed = false;
+            foreach (var (key, usage) in SoundLibrary.KnownSounds)
+            {
+                if (library.Find(key) != null) continue;
+                library.sounds.Add(new SoundLibrary.Sound { key = key, usage = usage });
+                changed = true;
+            }
+            if (changed) EditorUtility.SetDirty(library);
         }
 
         private static void ExportBearVisual()
@@ -315,9 +359,9 @@ namespace Door666.Editor
             string fieldPath = GameConstants.ScenePath(GameConstants.FieldScene);
             if (!File.Exists(fieldPath)) FieldSceneBuilder.Create(fieldPath);
             // Title frames the backdrop from its authored player pose; the other screens move the player to the spawn point.
-            EnsureScreenScene(GameConstants.TitleScene, typeof(TitleSceneController), new Vector3(1.8f, .05f, -4.5f), -8f);
-            EnsureScreenScene(GameConstants.GameScene, typeof(GameSceneController), WorldBuilder.SpawnPosition, 0);
-            EnsureScreenScene(GameConstants.EditModeScene, typeof(EditModeSceneController), WorldBuilder.SpawnPosition, 0);
+            EnsureScreenScene(GameConstants.TitleScene, typeof(TitleSceneController), new Vector3(1.8f, .05f, -4.5f), -8f, "Title");
+            EnsureScreenScene(GameConstants.GameScene, typeof(GameSceneController), WorldBuilder.SpawnPosition, 0, "HUD");
+            EnsureScreenScene(GameConstants.EditModeScene, typeof(EditModeSceneController), WorldBuilder.SpawnPosition, 0, "HUD", "EditorHud");
 
             var scenes = new EditorBuildSettingsScene[GameConstants.BuildScenes.Length];
             for (int i = 0; i < scenes.Length; i++)
@@ -325,9 +369,10 @@ namespace Door666.Editor
             EditorBuildSettings.scenes = scenes;
         }
 
-        /// <summary>Creates the screen scene if missing, and gives an existing scene a player when it has none.
+        /// <summary>Creates the screen scene if missing, and gives an existing scene a player and an interface when it has none.
         /// Scenes that already have their controller and player are left untouched.</summary>
-        private static void EnsureScreenScene(string name, Type controllerType, Vector3 playerPosition, float playerYaw)
+        /// <param name="shownScreens">Screens of Interface.prefab shown in the scene, so the scene looks as it plays without entering play mode.</param>
+        private static void EnsureScreenScene(string name, Type controllerType, Vector3 playerPosition, float playerYaw, params string[] shownScreens)
         {
             string path = GameConstants.ScenePath(name);
             bool exists = File.Exists(path);
@@ -353,6 +398,25 @@ namespace Door666.Editor
                     rig = instance.GetComponent<FirstPersonRig>();
                 }
                 player.objectReferenceValue = rig;
+                binding.ApplyModifiedPropertiesWithoutUndo();
+                changed = true;
+            }
+            var ui = binding.FindProperty("ui");
+            if (ui.objectReferenceValue == null)
+            {
+                var existing = Object.FindFirstObjectByType<GameUI>();
+                if (existing == null)
+                {
+                    var instance = (GameObject)PrefabUtility.InstantiatePrefab(InterfaceBuilder.EnsurePrefabs(), scene);
+                    // Only for the editor's view: GameUI hides every screen at start and shows what the scene needs.
+                    foreach (string screen in shownScreens)
+                    {
+                        var child = instance.transform.Find(screen);
+                        if (child != null) child.gameObject.SetActive(true);
+                    }
+                    existing = instance.GetComponent<GameUI>();
+                }
+                ui.objectReferenceValue = existing;
                 binding.ApplyModifiedPropertiesWithoutUndo();
                 changed = true;
             }

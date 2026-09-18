@@ -14,6 +14,7 @@ namespace Door666.Runtime
         public const string DefinitionsResource = "AnomalyDefinitions";
         public const string DefaultStagesResource = "DefaultAnomalies";
         public const string SettingsResource = "GameSettings";
+        public const string SoundsResource = "SoundLibrary";
         public const string FontResource = "Fonts/Japanese";
         public const string CatalogMaterialResource = "Materials/Catalog";
         public const string SensitivityPreference = "Door666.MouseSensitivity";

@@ -22,7 +22,9 @@
 
 - シーンは Title / Game / EditMode（画面ごと。`SceneController` 派生のコントローラーを置く）と、部屋の Field（各画面シーンが追加読込する）の4つです。
 - `Field.unity` と3つの画面シーンは、手で編集してかまいません。`ProjectBootstrap.Setup` は**足りないものだけ**を生成します。メニューの「部屋シーンを作り直す（上書き）」は手作業の変更を消します。
-- プレイヤーとカメラは `Assets/Prefabs/Player.prefab` です。各コントローラーの `player` 欄に割り当てが必要です。UI（`GameUI`）はまだコードで生成しています。
+- プレイヤーとカメラは `Assets/Prefabs/Player.prefab` です。各コントローラーの `player` 欄に割り当てが必要です。
+- UI は `Assets/Prefabs/UI/` の画面ごとのプレハブで、`Interface.prefab`（`GameUI`）にまとめて各画面シーンに置き、コントローラーの `ui` 欄に割り当てています。ユーザーが手で見た目や文言を変えるので、プレハブを作り直したり、文言をコードへ戻したりしないでください。文言を足すときは、その画面のコンポーネント（`PlayHud`、`EndingScreen` など）にシリアライズした欄として足します。ボタンの動作は `UIActionButton` の `UIAction`（数値で保存されるので末尾に足す）です。
+- 効果音・環境音は `Resources/SoundLibrary.asset` に AudioClip を割り当てれば差し替わります（空ならコードで作った音）。新しい音の名前を使うときは `SoundLibrary.KnownSounds` にも足します。
 - マテリアルはアセットです（`Assets/Field/Materials`、`Assets/Resources/Materials/Catalog`）。実行時に `Shader.Find` で Lit マテリアルを作らないでください。
 - 異変を動かす処理（`AnomalyActorSet`）は、Game と EditMode で共通です。
 - 異変の上限や配置の重なりのルールは `Assets/Resources/GameSettings.asset` で調整します。
@@ -46,6 +48,7 @@
 - EditMode の `[UnityTest]` で `yield return new EnterPlayMode()` した後は、**入れ子の `IEnumerator` を `yield return` しても実行されません**。シーンの読込待ちは、テスト本体のループで `SceneTestUtility.IsReady(out x)` を回してください。
 - バッチモードの `-executeMethod` の中では、`AssetDatabase.ImportPackage` が後回しにされます。そのため TMP の基本リソースは、`ProjectBootstrap` で .unitypackage を直接展開しています。
 - 統合テストは実時間で待つ箇所（`WaitForSecondsRealtime`）があります。フレームが進まずに失敗するときは、まず Error Pause などでプレイモードが止まっていないかを疑ってください。
+- 開いているエディタで MCP からテストを流すと、エディタが裏にあるあいだはプレイモードのフレームが進まず（`PlayerSettings.runInBackground` が false のため）、シーンを使うテストが「did not become ready」で失敗します。`TestRunnerApi` で実行する前だけ `PlayerSettings.runInBackground = true` にし、終わったら false に戻してください。結果は `%USERPROFILE%\AppData\LocalLow\Door666\666号扉\TestResults.xml` に出ます（MCP から登録したコールバックはプレイモード突入のドメインリロードで消えます）。
 
 ## 6. Windows とツールの罠
 

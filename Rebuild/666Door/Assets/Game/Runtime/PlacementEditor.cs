@@ -466,7 +466,7 @@ namespace Door666.Runtime
 
         private void OnRecognized(AnomalyActor actor)
         {
-            game.UI.Banner(actor.IsThreat ? "異変を認識した。  追ってくる。" : "異変を認識した。");
+            game.UI.Recognized(actor.IsThreat, true);
         }
 
         // Respawning destroys the actor, so captures are handled after the tick that reported them.
@@ -482,7 +482,7 @@ namespace Door666.Runtime
             {
                 var placed = actor == null ? null : actor.GetComponent<StageObject>();
                 if (placed == null || !game.World.PlacedObjects.Contains(placed)) continue;
-                game.UI.Banner("「" + game.World.Catalog.DisplayName(placed.PrefabId) + "」に捕まった。元の位置に戻した。");
+                game.UI.CaughtWhileEditing(game.World.Catalog.DisplayName(placed.PrefabId));
                 Respawn(placed);
             }
             pendingResets.Clear();
@@ -500,11 +500,20 @@ namespace Door666.Runtime
             if (!open || draft == null) return;
             var context = ValidationContext();
             CountAnomalies(null, out int anomalies, out int heavy);
-            string budget = "異変 " + anomalies + " / " + context.MaximumAnomalies
-                + "     重なりの大きい異変 " + heavy + " / " + context.AllowedHeavyAnomalies(anomalies);
-            if (MenuOpen) game.UI.ShowEditorMenu(this, draft.sceneId, dirty, category, selectedPrefab, budget);
-            else game.UI.ShowEditorHud(draft.sceneId, dirty, selectedPrefab == null ? "置くもの：未選択（Tab で選ぶ）"
-                : "置くもの：" + game.World.Catalog.DisplayName(selectedPrefab) + (category ? "（異変）" : "（通常）"), budget);
+            var state = new EditorStatus
+            {
+                StageId = draft.sceneId,
+                Unsaved = dirty,
+                AnomalyCategory = category,
+                SelectedPrefab = selectedPrefab,
+                SelectedName = selectedPrefab == null ? null : game.World.Catalog.DisplayName(selectedPrefab),
+                Anomalies = anomalies,
+                MaximumAnomalies = context.MaximumAnomalies,
+                HeavyAnomalies = heavy,
+                AllowedHeavyAnomalies = context.AllowedHeavyAnomalies(anomalies)
+            };
+            if (MenuOpen) game.UI.ShowEditorMenu(state);
+            else game.UI.ShowEditorHud(state);
         }
 
         private void HideGuides()

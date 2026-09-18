@@ -27,6 +27,8 @@ namespace Door666.Runtime
 
         [Tooltip("The first-person rig placed in this scene from Assets/Prefabs/Player.prefab.")]
         [SerializeField] private FirstPersonRig player;
+        [Tooltip("The interface placed in this scene from Assets/Prefabs/UI/Interface.prefab.")]
+        [SerializeField] private GameUI ui;
 
         private StageLoadResult loadedStages;
         private AudioClip ambienceClip;
@@ -35,15 +37,15 @@ namespace Door666.Runtime
         {
             if (player == null)
                 throw new System.InvalidOperationException(gameObject.scene.name + " にプレイヤーが配置されていません。メニュー「666号扉 → プロジェクトを初期化」を実行してください。");
-            Settings = Resources.Load<GameSettings>(GameConstants.SettingsResource);
+            if (ui == null)
+                throw new System.InvalidOperationException(gameObject.scene.name + " に UI（Interface.prefab）が配置されていません。メニュー「666号扉 → プロジェクトを初期化」を実行してください。");
+            Settings =Resources.Load<GameSettings>(GameConstants.SettingsResource);
             if (Settings == null) Settings = ScriptableObject.CreateInstance<GameSettings>();
             Definitions = AnomalyCatalog.FromJson(Resources.Load<TextAsset>(GameConstants.DefinitionsResource).text);
             Input = new PlayerInputReader();
             Player = player;
             Player.Initialize();
-            var ui = new GameObject("Interface", typeof(RectTransform));
-            SceneManager.MoveGameObjectToScene(ui, gameObject.scene);
-            UI = ui.AddComponent<GameUI>();
+            UI = ui;
             UI.Initialize(this);
             Repository = new StageRepository(Application.persistentDataPath);
             SubtitlesEnabled = PlayerPrefs.GetInt(GameConstants.SubtitlePreference, 1) != 0;
@@ -111,6 +113,16 @@ namespace Door666.Runtime
 
         private void CreateAmbience()
         {
+            var sounds = SoundLibrary.Load();
+            var ambience = gameObject.AddComponent<AudioSource>();
+            ambience.clip = sounds != null && sounds.ambience != null ? sounds.ambience : CreateBallastHum();
+            ambience.loop = true;
+            ambience.volume = sounds != null ? sounds.ambienceVolume : .4f;
+            ambience.Play();
+        }
+
+        private AudioClip CreateBallastHum()
+        {
             const int rate = 22050;
             var samples = new float[rate * 2];
             for (int i = 0; i < samples.Length; i++)
@@ -120,11 +132,7 @@ namespace Door666.Runtime
             }
             ambienceClip = AudioClip.Create("Fluorescent ballast", samples.Length, 1, rate, false);
             ambienceClip.SetData(samples, 0);
-            var ambience = gameObject.AddComponent<AudioSource>();
-            ambience.clip = ambienceClip;
-            ambience.loop = true;
-            ambience.volume = .4f;
-            ambience.Play();
+            return ambienceClip;
         }
     }
 }

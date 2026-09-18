@@ -47,8 +47,8 @@ namespace Door666.Runtime
             Physics.Raycast(view.position, view.forward, out var hit, Settings.interactionDistance, ~0, QueryTriggerInteraction.Ignore);
             var target = hit.collider == null ? null : hit.collider.GetComponentInParent<StageObject>();
             var door = hit.collider == null ? null : hit.collider.GetComponentInParent<DoorTarget>();
-            string prompt = door != null ? "[" + Input.Binding(Input.Interact) + "]  " + door.InteractionLabel : "";
-            UI.SetHUD(Session.Streak, Session.RequiredStreak, Session.RemainingSeconds, prompt);
+            UI.SetHUD(Session.Streak, Session.RequiredStreak, Session.RemainingSeconds);
+            UI.DoorPrompt(door, door != null ? Input.Binding(Input.Interact) : "");
             // Door input takes precedence, immediately closes the round, and freezes pursuit.
             if (door != null && Input.Interact.WasPressedThisFrame()) { ChooseDoor(door.IsForward); return; }
             // A capture ends the run and suspends every actor, so the remaining actors skip this frame.
@@ -92,7 +92,8 @@ namespace Door666.Runtime
             SetCursor(false);
             UI.ShowPlay();
             UI.Fade(0);
-            UI.SetHUD(Session.Streak, Session.RequiredStreak, Session.RemainingSeconds, "");
+            UI.SetHUD(Session.Streak, Session.RequiredStreak, Session.RemainingSeconds);
+            UI.Prompt("");
         }
 
         public void ChooseDoor(bool forward)
@@ -107,7 +108,7 @@ namespace Door666.Runtime
 
         private IEnumerator ShowDecision(RoundDecision result)
         {
-            UI.Banner(result.IsCorrect ? "扉の先へ。  " + result.Streak + " / " + Session.RequiredStreak : "ここへ、戻された。\n連続正解  0 / " + Session.RequiredStreak, Settings.feedbackSeconds + .3f);
+            UI.DoorResult(result.IsCorrect, result.Streak, Session.RequiredStreak, Settings.feedbackSeconds + .3f);
             SpatialAudio.Emit(Player.transform, Player.View.transform.position, result.IsCorrect ? "door" : "reverse", .35f);
             float elapsed = 0;
             while (elapsed < Settings.feedbackSeconds)
@@ -123,7 +124,7 @@ namespace Door666.Runtime
         private void OnRecognition(AnomalyActor actor)
         {
             if (Screen != GameScreen.Playing) return;
-            UI.Banner(actor.IsThreat ? "異変を認識した。  出口へ逃げろ。" : "異変を認識した。");
+            UI.Recognized(actor.IsThreat);
         }
 
         private void OnCaught(AnomalyActor actor)
@@ -136,9 +137,7 @@ namespace Door666.Runtime
             Screen = GameScreen.Ending;
             SuspendActors(true);
             SetCursor(true);
-            if (Session.EndReason == RunEndReason.Escaped) UI.ShowEnding("扉の向こうへ", "六度の判断が、あなたを外へ連れ出した。\nそれでも、背後の扉を見てはいけない。");
-            else if (Session.EndReason == RunEndReason.Caught) UI.ShowEnding("もう、戻れない", "「" + Session.CapturedBy + "」に捕まった。\nこの部屋には、あなたの気配が残る。");
-            else UI.ShowEnding("時間が、尽きた", "扉の音は、もう聞こえない。\nこの部屋での探索は終わった。");
+            UI.ShowEnding(Session.EndReason, Session.CapturedBy);
         }
 
         public void Pause()

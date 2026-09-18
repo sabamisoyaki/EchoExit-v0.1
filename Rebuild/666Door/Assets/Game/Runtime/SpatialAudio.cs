@@ -3,19 +3,33 @@ using UnityEngine;
 
 namespace Door666.Runtime
 {
-    /// <summary>Original, deterministic procedural sound palette; every source is spatial.</summary>
+    /// <summary>Spatial sound effects: the clip assigned in SoundLibrary.asset, or a deterministic procedural sound.</summary>
     public static class SpatialAudio
     {
         private static readonly Dictionary<string, AudioClip> Clips = new Dictionary<string, AudioClip>();
+        private static SoundLibrary library;
 
         public static void Emit(Transform owner, Vector3 position, string kind, float volume = 0.5f)
         {
             if (string.IsNullOrEmpty(kind) || volume <= 0) return;
-            if (!Clips.TryGetValue(kind, out var clip) || clip == null)
+            if (library == null) library = SoundLibrary.Load();
+            var assigned = library == null ? null : library.Find(kind);
+            AudioClip clip;
+            if (assigned != null && assigned.clip != null)
             {
-                clip = CreateClip(kind);
-                Clips[kind] = clip;
+                clip = assigned.clip;
+                volume *= assigned.volume;
             }
+            else
+            {
+                if (assigned != null) volume *= assigned.volume;
+                if (!Clips.TryGetValue(kind, out clip) || clip == null)
+                {
+                    clip = CreateClip(kind);
+                    Clips[kind] = clip;
+                }
+            }
+            if (volume <= 0) return;
             var sound = new GameObject("Spatial sound · " + kind);
             if (owner != null) sound.transform.SetParent(owner, true);
             sound.transform.position = position;
