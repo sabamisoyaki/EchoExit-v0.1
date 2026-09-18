@@ -1,0 +1,5 @@
+{
+  "name": "Door666.Editor",
+  "references": ["Door666.Core", "Door666.Runtime", "Unity.InputSystem", "Unity.TextMeshPro", "Unity.ugui", "Unity.AI.Navigation", "Unity.RenderPipelines.Universal.Runtime", "Unity.RenderPipelines.Core.Runtime", "Unity.RenderPipelines.Universal.Editor"],
+  "includePlatforms": ["Editor"]
+}

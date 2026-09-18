@@ -1,0 +1,5 @@
+{
+  "name": "Door666.Runtime",
+  "rootNamespace": "Door666.Runtime",
+  "references": ["Door666.Core", "Unity.InputSystem", "Unity.TextMeshPro", "Unity.ugui", "Unity.AI.Navigation", "Unity.RenderPipelines.Universal.Runtime", "Unity.RenderPipelines.Core.Runtime"]
+}

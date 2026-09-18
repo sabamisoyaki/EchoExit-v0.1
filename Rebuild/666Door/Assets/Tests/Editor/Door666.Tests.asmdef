@@ -1,0 +1,8 @@
+{
+  "name": "Door666.Tests",
+  "references": ["Door666.Core", "Door666.Runtime", "Unity.InputSystem", "Unity.AI.Navigation", "Unity.RenderPipelines.Universal.Runtime", "Unity.RenderPipelines.Core.Runtime"],
+  "includePlatforms": ["Editor"],
+  "overrideReferences": true,
+  "precompiledReferences": ["nunit.framework.dll", "Newtonsoft.Json.dll"],
+  "optionalUnityReferences": ["TestAssemblies"]
+}

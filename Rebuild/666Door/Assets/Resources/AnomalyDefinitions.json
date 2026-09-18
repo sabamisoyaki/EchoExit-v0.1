@@ -1,0 +1,71 @@
+{
+  "anomalies": [
+    {
+      "anomalyId": "ANM-001", "prefabId": "changeColorBox", "displayName": "目を離した箱", "behaviorClass": "P", "dangerLevel": 0,
+      "ritualSteps": [
+        { "condition": "Gaze", "duration": 1.5, "resetStep": 0, "resetOnMismatch": true },
+        { "condition": "LookAway", "duration": 1.0, "resetStep": 1, "resetOnMismatch": true }
+      ],
+      "recognitionEffect": { "kind": "Crimson", "duration": 0.45, "sound": "reverse", "subtitle": "［巻き戻るような音］" },
+      "clue": { "kind": "Saturation", "sound": "hum", "subtitle": "［低い電気音］", "interval": 7.5, "distance": 3, "volume": 0.08 },
+      "placementRules": { "clearanceRadius": 1.0 }, "userStageAllowed": true
+    },
+    {
+      "anomalyId": "ANM-002", "prefabId": "anomaryShirinkBox", "displayName": "痩せる箱", "behaviorClass": "P", "dangerLevel": 0,
+      "ritualSteps": [ { "condition": "EnterRadius", "radius": 2.5, "resetStep": 0 } ],
+      "recognitionEffect": { "kind": "Shrink", "duration": 0.8, "scale": 0.08, "restoreDistance": 5.0, "sound": "contract", "subtitle": "［箱が軋む］" },
+      "clue": { "kind": "NarrowShadow", "distance": 3 },
+      "placementRules": { "automaticActivation": true, "activationRadius": 2.5, "retreatDistance": 5.0 }, "userStageAllowed": true
+    },
+    {
+      "anomalyId": "ANM-003", "prefabId": "DollPrefab", "displayName": "帰ってくる人形", "behaviorClass": "R", "dangerLevel": 1,
+      "ritualSteps": [
+        { "condition": "EnterRadius", "radius": 2.5, "resetStep": 0 },
+        { "condition": "ExitRadius", "radius": 4.5, "timeWindow": 6.0, "resetStep": 0 }
+      ],
+      "recognitionEffect": { "kind": "VanishReturn", "duration": 0.3, "returnDelay": 5.0, "sound": "cloth", "subtitle": "［布が擦れる］" },
+      "clue": { "kind": "FaceSpawn", "sound": "cloth", "subtitle": "［かすかな衣擦れ］", "interval": 9.0, "distance": 3.0, "volume": 0.09 },
+      "placementRules": { "retreatDistance": 4.5 }, "userStageAllowed": true
+    },
+    {
+      "anomalyId": "ANM-004", "prefabId": "bears", "displayName": "叩き起こし", "behaviorClass": "H/E", "dangerLevel": 2,
+      "ritualSteps": [ { "condition": "Hit", "resetStep": 0 } ],
+      "recognitionEffect": { "kind": "Awaken", "duration": 1.2, "sound": "inhale", "subtitle": "［鋭い吸気音］" },
+      "clue": { "kind": "Breathing", "sound": "doubleBreath", "subtitle": "［重なる呼吸音］", "interval": 5.5, "distance": 3.0, "volume": 0.11 },
+      "threatProfile": { "enabled": true, "speed": 2.8, "captureDistance": 1.1, "graceSeconds": 1.2, "maxPlayerSpeedRatio": 0.75 },
+      "endingId": "doll_procession", "placementRules": { "clearanceRadius": 1.2, "retreatDistance": 12.0 }, "userStageAllowed": true
+    },
+    {
+      "anomalyId": "ANM-005", "prefabId": "ChairPrefab", "displayName": "席を数える椅子", "behaviorClass": "P", "dangerLevel": 0,
+      "ritualSteps": [
+        { "condition": "CrossThreshold", "radius": 2.5, "resetStep": 0 },
+        { "condition": "Gaze", "duration": 1.0, "timeWindow": 4.0, "resetStep": 0 }
+      ],
+      "recognitionEffect": { "kind": "MultiplyShadow", "duration": 1.8, "sound": "wood", "subtitle": "［床を引っ掻く音］" },
+      "clue": { "kind": "WoodTick", "sound": "wood", "subtitle": "［木の擦れる音］", "interval": 8.0, "distance": 3.0, "volume": 0.10 },
+      "placementRules": { "clearanceRadius": 2.5 }, "userStageAllowed": true
+    },
+    {
+      "anomalyId": "ANM-006", "prefabId": "wall", "displayName": "呼吸する壁", "behaviorClass": "R", "dangerLevel": 1,
+      "ritualSteps": [
+        { "condition": "EnterRadius", "radius": 3.0, "resetStep": 0 },
+        { "condition": "RemainStill", "duration": 2.5, "maxDistance": 3.0, "requireLookAway": true, "resetStep": 0, "resetOnMismatch": true }
+      ],
+      "recognitionEffect": { "kind": "WallBreath", "duration": 1.8, "scale": 1.25, "sound": "exhale", "subtitle": "［すぐ近くで息を吐く音］" },
+      "clue": { "kind": "SeamPulse", "sound": "settle", "subtitle": "［壁の奥で軋む音］", "interval": 8.5, "distance": 3.0, "volume": 0.08 },
+      "placementRules": { "clearanceRadius": 1.0 }, "userStageAllowed": true
+    },
+    {
+      "anomalyId": "ANM-008", "prefabId": "footstepEcho", "displayName": "一歩多い足音", "behaviorClass": "R", "dangerLevel": 1,
+      "ritualSteps": [
+        { "condition": "AudioCue", "resetStep": 0 },
+        { "condition": "RemainStill", "timeWindow": 0.8, "resetStep": 0 },
+        { "condition": "RemainStill", "duration": 2.0, "resetStep": 0, "resetOnMismatch": true },
+        { "condition": "Gaze", "gazeTarget": "AudioCue", "requireStill": true, "resetOnGuardFailure": true, "resetStep": 0 }
+      ],
+      "recognitionEffect": { "kind": "FootstepApparition", "duration": 1.5, "sound": "wet", "subtitle": "［濡れた足音］" },
+      "clue": { "kind": "ExtraFootstep", "sound": "footstep", "subtitle": "［足音が一歩だけ重なる］", "interval": 5.0, "distance": 9.0, "volume": 0.7 },
+      "placementRules": { "clearanceRadius": 2.0 }, "userStageAllowed": true
+    }
+  ]
+}

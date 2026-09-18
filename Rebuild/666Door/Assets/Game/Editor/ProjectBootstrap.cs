@@ -1,0 +1,546 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.IO.Compression;
+using System.Reflection;
+using System.Text;
+using Door666.Runtime;
+using TMPro;
+using UnityEditor;
+using UnityEditor.Build.Reporting;
+using UnityEditor.SceneManagement;
+using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
+using UnityEngine.TextCore.LowLevel;
+using Object = UnityEngine.Object;
+
+namespace Door666.Editor
+{
+    /// <summary>Reproducible project setup. Missing scenes are generated; existing scenes are left for hand editing.</summary>
+    public static class ProjectBootstrap
+    {
+        private const string RenderingFolder = "Assets/Resources/Rendering";
+        private const string RendererPath = RenderingFolder + "/FieldRenderer.asset";
+        private const string PipelinePath = RenderingFolder + "/FieldPipeline.asset";
+        private const string FontPath = "Assets/Resources/Fonts/Japanese.asset";
+
+        [MenuItem("666号扉/プロジェクトを初期化")]
+        public static void Setup()
+        {
+            if (!File.Exists("Assets/Game/Runtime/SceneController.cs"))
+                throw new InvalidOperationException("新規 666Door プロジェクトから実行してください。");
+            if (!Application.isBatchMode && !EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+
+            EnsureFolder("Assets/Scenes");
+            EnsureFolder(RenderingFolder);
+            EnsureFolder("Assets/Resources/Fonts");
+            EnsureFolder("Assets/Resources/Visuals");
+            ConfigurePlayer();
+            ConfigureRendering();
+            ConfigureJapaneseFont();
+            EnsureSettings();
+            EnsureSoundLibrary();
+            ExportBearVisual();
+            EnsureCatalogMaterials();
+            InterfaceBuilder.EnsurePrefabs();
+            EnsureScenes();
+            AddFontCharacters();
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+            if (!Application.isBatchMode) EditorSceneManager.OpenScene(GameConstants.ScenePath(GameConstants.TitleScene), OpenSceneMode.Single);
+            Debug.Log("666Door bootstrap complete. Start scene: " + GameConstants.ScenePath(GameConstants.TitleScene));
+        }
+
+        [MenuItem("666号扉/部屋シーンを作り直す（上書き）")]
+        public static void RecreateField()
+        {
+            string path = GameConstants.ScenePath(GameConstants.FieldScene);
+            if (!Application.isBatchMode && !EditorUtility.DisplayDialog("部屋シーンを作り直す",
+                path + " をコードから生成し直します。シーン上で手作業した変更は失われます。", "作り直す", "やめる")) return;
+            if (!Application.isBatchMode && !EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+            FieldSceneBuilder.Create(path);
+            AssetDatabase.SaveAssets();
+        }
+
+        private static void ConfigurePlayer()
+        {
+            PlayerSettings.productName = "666号扉";
+            PlayerSettings.companyName = "Door666";
+            PlayerSettings.bundleVersion = "0.2.0";
+            PlayerSettings.defaultScreenWidth = 1600;
+            PlayerSettings.defaultScreenHeight = 900;
+            PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
+            PlayerSettings.resizableWindow = true;
+            PlayerSettings.runInBackground = false;
+            PlayerSettings.colorSpace = ColorSpace.Linear;
+            PlayerSettings.SetScriptingBackend(UnityEditor.Build.NamedBuildTarget.Standalone, ScriptingImplementation.Mono2x);
+            PlayerSettings.SetApiCompatibilityLevel(UnityEditor.Build.NamedBuildTarget.Standalone, ApiCompatibilityLevel.NET_Standard);
+            var playerSettings = new SerializedObject(AssetDatabase.LoadAllAssetsAtPath("ProjectSettings/ProjectSettings.asset")[0]);
+            var handler = playerSettings.FindProperty("activeInputHandler");
+            if (handler == null) handler = playerSettings.FindProperty("m_ActiveInputHandler");
+            if (handler == null) throw new InvalidOperationException("Input System の ProjectSettings 項目が見つかりません。");
+            handler.intValue = 1;
+            playerSettings.ApplyModifiedPropertiesWithoutUndo();
+            QualitySettings.vSyncCount = 1;
+            QualitySettings.antiAliasing = 0;
+            QualitySettings.anisotropicFiltering = AnisotropicFiltering.Enable;
+            QualitySettings.pixelLightCount = 8;
+            QualitySettings.shadows = UnityEngine.ShadowQuality.All;
+            QualitySettings.shadowDistance = 22;
+        }
+
+        private static void ConfigureRendering()
+        {
+            var renderer = AssetDatabase.LoadAssetAtPath<UniversalRendererData>(RendererPath);
+            if (renderer == null)
+            {
+                renderer = ScriptableObject.CreateInstance<UniversalRendererData>();
+                renderer.name = "666Door field renderer";
+                AssetDatabase.CreateAsset(renderer, RendererPath);
+            }
+            renderer.renderingMode = RenderingMode.ForwardPlus;
+            renderer.depthPrimingMode = DepthPrimingMode.Disabled;
+            EditorUtility.SetDirty(renderer);
+
+            var pipeline = AssetDatabase.LoadAssetAtPath<UniversalRenderPipelineAsset>(PipelinePath);
+            if (pipeline == null)
+            {
+                pipeline = UniversalRenderPipelineAsset.Create(renderer);
+                pipeline.name = "666Door lighting";
+                AssetDatabase.CreateAsset(pipeline, PipelinePath);
+            }
+            pipeline.supportsHDR = true;
+            pipeline.msaaSampleCount = 4;
+            pipeline.renderScale = 1;
+            pipeline.shadowDistance = 22;
+            pipeline.shadowCascadeCount = 1;
+            pipeline.shadowDepthBias = .4f;
+            pipeline.shadowNormalBias = .25f;
+            pipeline.maxAdditionalLightsCount = 8;
+            pipeline.additionalLightsShadowmapResolution = 2048;
+            var serializedPipeline = new SerializedObject(pipeline);
+            SetBoolean(serializedPipeline, "m_AdditionalLightShadowsSupported", true);
+            SetBoolean(serializedPipeline, "m_SoftShadowsSupported", true);
+            SetBoolean(serializedPipeline, "m_AnyShadowsSupported", true);
+            SetInteger(serializedPipeline, "m_AdditionalLightsRenderingMode", (int)LightRenderingMode.PerPixel);
+            serializedPipeline.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(pipeline);
+            GraphicsSettings.defaultRenderPipeline = pipeline;
+
+            int quality = QualitySettings.GetQualityLevel();
+            for (int i = 0; i < QualitySettings.names.Length; i++)
+            {
+                QualitySettings.SetQualityLevel(i, false);
+                QualitySettings.renderPipeline = pipeline;
+            }
+            QualitySettings.SetQualityLevel(quality, true);
+            // URP 17 keeps the settings type internal; invoke its own version-aware initialization.
+            var globalType = typeof(UniversalRenderPipeline).Assembly.GetType("UnityEngine.Rendering.Universal.UniversalRenderPipelineGlobalSettings");
+            var ensureGlobal = globalType == null ? null : globalType.GetMethod("Ensure", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+            if (ensureGlobal == null || ensureGlobal.Invoke(null, new object[] { true }) == null)
+                throw new InvalidOperationException("URP Global Settings を作成できません。");
+
+            // Resource materials keep shaders used by runtime factories present in standalone builds.
+            EnsureMaterial("WorldLit", "Universal Render Pipeline/Lit", new Color(.65f, .60f, .36f), false);
+            EnsureMaterial("Fluorescent", "Universal Render Pipeline/Lit", new Color(.90f, .95f, .76f), true);
+            EnsureMaterial("AnomalyShadow", "Universal Render Pipeline/Unlit", Color.black, false);
+        }
+
+        private static void ConfigureJapaneseFont()
+        {
+            if (!File.Exists("Assets/TextMesh Pro/Resources/TMP Settings.asset"))
+                ImportTextMeshProEssentials();
+
+            var source = AssetDatabase.LoadAssetAtPath<Font>("Assets/Resources/Fonts/NotoSansJP.ttf");
+            if (source == null) throw new InvalidOperationException("NotoSansJP.ttf が見つかりません。");
+            var font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FontPath);
+            if (font == null)
+            {
+                font = TMP_FontAsset.CreateFontAsset(source, 64, 9, GlyphRenderMode.SDFAA, 2048, 2048, AtlasPopulationMode.Dynamic, true);
+                if (font == null) throw new InvalidOperationException("日本語フォントの生成に失敗しました。");
+                font.name = "Japanese";
+                AssetDatabase.CreateAsset(font, FontPath);
+                font.material.name = "Japanese SDF";
+                AssetDatabase.AddObjectToAsset(font.material, font);
+                foreach (var atlas in font.atlasTextures)
+                    if (atlas != null && string.IsNullOrEmpty(AssetDatabase.GetAssetPath(atlas))) AssetDatabase.AddObjectToAsset(atlas, font);
+            }
+            font.atlasPopulationMode = AtlasPopulationMode.Dynamic;
+            font.isMultiAtlasTexturesEnabled = true;
+            var serialized = new SerializedObject(font);
+            SetBoolean(serialized, "m_ClearDynamicDataOnBuild", false);
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(font);
+
+            var settings = TMP_Settings.instance;
+            if (settings == null) throw new InvalidOperationException("TMP Essential Resources のインポートが完了していません。");
+            TMP_Settings.defaultFontAsset = font;
+            if (TMP_Settings.fallbackFontAssets == null) TMP_Settings.fallbackFontAssets = new List<TMP_FontAsset>();
+            if (!TMP_Settings.fallbackFontAssets.Contains(font)) TMP_Settings.fallbackFontAssets.Add(font);
+            EditorUtility.SetDirty(settings);
+            AssetDatabase.SaveAssets();
+        }
+
+        // AssetDatabase.ImportPackage defers the import to a later editor tick, so -executeMethod exits first.
+        // Unpack the .unitypackage (a gzipped tar of guid/asset, guid/asset.meta, guid/pathname) synchronously instead.
+        private static void ImportTextMeshProEssentials()
+        {
+            var package = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(TMP_Settings).Assembly);
+            if (package == null) throw new InvalidOperationException("TextMesh Pro のパッケージが見つかりません。");
+            string archive = Path.Combine(package.resolvedPath, "Package Resources", "TMP Essential Resources.unitypackage");
+
+            var entries = new Dictionary<string, Dictionary<string, byte[]>>();
+            using (var gzip = new GZipStream(File.OpenRead(archive), CompressionMode.Decompress))
+            {
+                var header = new byte[512];
+                while (ReadBlock(gzip, header) && header[0] != 0)
+                {
+                    string name = ReadTarString(header, 345, 155) + ReadTarString(header, 0, 100);
+                    long size = Convert.ToInt64(ReadTarString(header, 124, 12).Trim(), 8);
+                    var data = new byte[size];
+                    if (!ReadBlock(gzip, data) || !ReadBlock(gzip, new byte[(512 - size % 512) % 512]))
+                        throw new EndOfStreamException(archive);
+                    if (header[156] != '0' && header[156] != 0) continue;
+
+                    if (name.StartsWith("./", StringComparison.Ordinal)) name = name.Substring(2);
+                    int slash = name.IndexOf('/');
+                    if (slash <= 0) continue;
+                    string guid = name.Substring(0, slash);
+                    if (!entries.TryGetValue(guid, out var files)) entries[guid] = files = new Dictionary<string, byte[]>();
+                    files[name.Substring(slash + 1)] = data;
+                }
+            }
+
+            foreach (var files in entries.Values)
+            {
+                if (!files.TryGetValue("pathname", out var pathBytes)) continue;
+                string assetPath = Encoding.UTF8.GetString(pathBytes).Split('\n')[0].Trim();
+                if (!assetPath.StartsWith("Assets/", StringComparison.Ordinal)) continue;
+                bool isFile = files.TryGetValue("asset", out var asset);
+                Directory.CreateDirectory(isFile ? Path.GetDirectoryName(assetPath) : assetPath);
+                if (isFile) File.WriteAllBytes(assetPath, asset);
+                if (files.TryGetValue("asset.meta", out var meta)) File.WriteAllBytes(assetPath + ".meta", meta);
+            }
+            AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+        }
+
+        private static bool ReadBlock(Stream stream, byte[] buffer)
+        {
+            int offset = 0;
+            while (offset < buffer.Length)
+            {
+                int read = stream.Read(buffer, offset, buffer.Length - offset);
+                if (read == 0) return false;
+                offset += read;
+            }
+            return true;
+        }
+
+        private static string ReadTarString(byte[] header, int offset, int length)
+        {
+            int end = Array.IndexOf(header, (byte)0, offset, length);
+            return Encoding.ASCII.GetString(header, offset, (end < 0 ? offset + length : end) - offset);
+        }
+
+        /// <summary>Bakes every character the game can show into the font atlas: code, stage data and the UI prefabs.
+        /// Runs after the prefabs exist; characters added later by hand are still rendered through the dynamic atlas.</summary>
+        internal static void AddFontCharacters()
+        {
+            var font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FontPath);
+            if (font == null) throw new InvalidOperationException("日本語フォントがありません: " + FontPath);
+            font.TryAddCharacters(CollectVisibleCharacters(), out string missing);
+            if (!string.IsNullOrEmpty(missing)) Debug.LogWarning("日本語フォントに未収録の文字: " + missing);
+            foreach (var atlas in font.atlasTextures)
+                if (atlas != null && string.IsNullOrEmpty(AssetDatabase.GetAssetPath(atlas))) AssetDatabase.AddObjectToAsset(atlas, font);
+            EditorUtility.SetDirty(font);
+        }
+
+        private static string CollectVisibleCharacters()
+        {
+            var characters = new SortedSet<char>();
+            for (char c = ' '; c <= '~'; c++) characters.Add(c);
+            foreach (var path in Directory.GetFiles("Assets/Game/Runtime", "*.cs", SearchOption.AllDirectories))
+                foreach (var c in File.ReadAllText(path, Encoding.UTF8)) if (!char.IsControl(c)) characters.Add(c);
+            foreach (var path in Directory.GetFiles("Assets/Resources", "*.json", SearchOption.AllDirectories))
+                foreach (var c in File.ReadAllText(path, Encoding.UTF8)) if (!char.IsControl(c)) characters.Add(c);
+            // Wording edited in the UI prefabs: label texts and the texts set on each screen's component.
+            if (AssetDatabase.IsValidFolder(InterfaceBuilder.Folder))
+                foreach (var guid in AssetDatabase.FindAssets("t:Prefab", new[] { InterfaceBuilder.Folder }))
+                    foreach (var component in AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GUIDToAssetPath(guid)).GetComponentsInChildren<Component>(true))
+                    {
+                        if (component == null) continue;
+                        var property = new SerializedObject(component).GetIterator();
+                        while (property.Next(true))
+                            if (property.propertyType == SerializedPropertyType.String)
+                                foreach (var c in property.stringValue) if (!char.IsControl(c)) characters.Add(c);
+                    }
+            foreach (char c in "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんアイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン０１２３４５６７８９、。！？「」『』［］（）・ー…↑↓←→") characters.Add(c);
+            var result = new StringBuilder(characters.Count);
+            foreach (var c in characters) result.Append(c);
+            return result.ToString();
+        }
+
+        private static void EnsureSettings()
+        {
+            string path = "Assets/Resources/" + GameConstants.SettingsResource + ".asset";
+            if (AssetDatabase.LoadAssetAtPath<GameSettings>(path) != null) return;
+            var settings = ScriptableObject.CreateInstance<GameSettings>();
+            AssetDatabase.CreateAsset(settings, path);
+        }
+
+        /// <summary>Creates SoundLibrary.asset and lists every sound in it, so a clip can be assigned to each by hand.
+        /// Assigned clips and volumes are kept.</summary>
+        internal static void EnsureSoundLibrary()
+        {
+            string path = "Assets/Resources/" + GameConstants.SoundsResource + ".asset";
+            var library = AssetDatabase.LoadAssetAtPath<SoundLibrary>(path);
+            if (library == null)
+            {
+                library = ScriptableObject.CreateInstance<SoundLibrary>();
+                AssetDatabase.CreateAsset(library, path);
+            }
+            bool changed = false;
+            foreach (var (key, usage) in SoundLibrary.KnownSounds)
+            {
+                if (library.Find(key) != null) continue;
+                library.sounds.Add(new SoundLibrary.Sound { key = key, usage = usage });
+                changed = true;
+            }
+            if (changed) EditorUtility.SetDirty(library);
+        }
+
+        private static void ExportBearVisual()
+        {
+            const string prefabPath = "Assets/Resources/Visuals/bears.prefab";
+            if (AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath) != null) return;
+            var model = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Art/bears.fbx");
+            if (model == null)
+            {
+                Debug.Log("Bear FBX is unavailable; the procedural bear will be used.");
+                return;
+            }
+            var visual = Object.Instantiate(model);
+            try
+            {
+                visual.name = "bears";
+                visual.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+                // Copy only geometry, transforms and the skin hierarchy, never legacy gameplay components.
+                foreach (var component in visual.GetComponentsInChildren<Component>(true))
+                {
+                    if (component == null || component is Transform || component is MeshFilter || component is Renderer) continue;
+                    Object.DestroyImmediate(component);
+                }
+                var fur = EnsureMaterial("BearFur", "Universal Render Pipeline/Lit", new Color(.31f, .20f, .10f), false);
+                foreach (var renderer in visual.GetComponentsInChildren<Renderer>(true))
+                {
+                    var materials = renderer.sharedMaterials;
+                    for (int i = 0; i < materials.Length; i++) materials[i] = fur;
+                    renderer.sharedMaterials = materials;
+                    renderer.shadowCastingMode = ShadowCastingMode.On;
+                    renderer.receiveShadows = true;
+                    if (renderer is SkinnedMeshRenderer skin) skin.updateWhenOffscreen = true;
+                }
+                PrefabUtility.SaveAsPrefabAsset(visual, prefabPath);
+            }
+            finally { Object.DestroyImmediate(visual); }
+        }
+
+        private static void EnsureCatalogMaterials()
+        {
+            string folder = "Assets/Resources/" + GameConstants.CatalogMaterialResource;
+            EnsureFolder(folder);
+            foreach (var spec in ObjectCatalog.Surfaces) EnsureSurfaceMaterial(folder, spec);
+        }
+
+        private static void EnsureScenes()
+        {
+            // The field comes first: screen scenes do not reference it, but it must exist before anything is played.
+            string fieldPath = GameConstants.ScenePath(GameConstants.FieldScene);
+            if (!File.Exists(fieldPath)) FieldSceneBuilder.Create(fieldPath);
+            // Title frames the backdrop from its authored player pose; the other screens move the player to the spawn point.
+            EnsureScreenScene(GameConstants.TitleScene, typeof(TitleSceneController), new Vector3(1.8f, .05f, -4.5f), -8f, "Title");
+            EnsureScreenScene(GameConstants.GameScene, typeof(GameSceneController), WorldBuilder.SpawnPosition, 0, "HUD");
+            EnsureScreenScene(GameConstants.EditModeScene, typeof(EditModeSceneController), WorldBuilder.SpawnPosition, 0, "HUD", "EditorHud");
+
+            var scenes = new EditorBuildSettingsScene[GameConstants.BuildScenes.Length];
+            for (int i = 0; i < scenes.Length; i++)
+                scenes[i] = new EditorBuildSettingsScene(GameConstants.ScenePath(GameConstants.BuildScenes[i]), true);
+            EditorBuildSettings.scenes = scenes;
+        }
+
+        /// <summary>Creates the screen scene if missing, and gives an existing scene a player and an interface when it has none.
+        /// Scenes that already have their controller and player are left untouched.</summary>
+        /// <param name="shownScreens">Screens of Interface.prefab shown in the scene, so the scene looks as it plays without entering play mode.</param>
+        private static void EnsureScreenScene(string name, Type controllerType, Vector3 playerPosition, float playerYaw, params string[] shownScreens)
+        {
+            string path = GameConstants.ScenePath(name);
+            bool exists = File.Exists(path);
+            var scene = exists
+                ? EditorSceneManager.OpenScene(path, OpenSceneMode.Single)
+                : EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            bool changed = !exists;
+            var controller = Object.FindFirstObjectByType(controllerType) as SceneController;
+            if (controller == null)
+            {
+                controller = (SceneController)new GameObject(name, controllerType).GetComponent(controllerType);
+                changed = true;
+            }
+            var binding = new SerializedObject(controller);
+            var player = binding.FindProperty("player");
+            if (player.objectReferenceValue == null)
+            {
+                var rig = Object.FindFirstObjectByType<FirstPersonRig>();
+                if (rig == null)
+                {
+                    var instance = (GameObject)PrefabUtility.InstantiatePrefab(EnsurePlayerPrefab(), scene);
+                    instance.transform.SetPositionAndRotation(playerPosition, Quaternion.Euler(0, playerYaw, 0));
+                    rig = instance.GetComponent<FirstPersonRig>();
+                }
+                player.objectReferenceValue = rig;
+                binding.ApplyModifiedPropertiesWithoutUndo();
+                changed = true;
+            }
+            var ui = binding.FindProperty("ui");
+            if (ui.objectReferenceValue == null)
+            {
+                var existing = Object.FindFirstObjectByType<GameUI>();
+                if (existing == null)
+                {
+                    var instance = (GameObject)PrefabUtility.InstantiatePrefab(InterfaceBuilder.EnsurePrefabs(), scene);
+                    // Only for the editor's view: GameUI hides every screen at start and shows what the scene needs.
+                    foreach (string screen in shownScreens)
+                    {
+                        var child = instance.transform.Find(screen);
+                        if (child != null) child.gameObject.SetActive(true);
+                    }
+                    existing = instance.GetComponent<GameUI>();
+                }
+                ui.objectReferenceValue = existing;
+                binding.ApplyModifiedPropertiesWithoutUndo();
+                changed = true;
+            }
+            if (changed) EditorSceneManager.SaveScene(scene, path);
+        }
+
+        private const string PlayerPrefabPath = "Assets/Prefabs/Player.prefab";
+
+        /// <summary>The first-person rig every screen scene places: collider, eyes camera and audio listener.</summary>
+        private static GameObject EnsurePlayerPrefab()
+        {
+            var existing = AssetDatabase.LoadAssetAtPath<GameObject>(PlayerPrefabPath);
+            if (existing != null) return existing;
+            EnsureFolder("Assets/Prefabs");
+            var root = new GameObject("Player", typeof(CharacterController), typeof(FirstPersonRig));
+            try
+            {
+                var body = root.GetComponent<CharacterController>();
+                body.height = 1.75f;
+                body.radius = .28f;
+                body.center = Vector3.up * .875f;
+                body.stepOffset = .22f;
+                body.skinWidth = .025f;
+                var eyes = new GameObject("Eyes", typeof(Camera), typeof(AudioListener), typeof(UniversalAdditionalCameraData));
+                eyes.tag = "MainCamera";
+                eyes.transform.SetParent(root.transform, false);
+                eyes.transform.localPosition = Vector3.up * 1.6f;
+                var camera = eyes.GetComponent<Camera>();
+                camera.fieldOfView = 72f;
+                camera.nearClipPlane = .05f;
+                camera.farClipPlane = 70f;
+                camera.clearFlags = CameraClearFlags.SolidColor;
+                camera.backgroundColor = new Color(.018f, .02f, .013f);
+                var rig = new SerializedObject(root.GetComponent<FirstPersonRig>());
+                rig.FindProperty("view").objectReferenceValue = camera;
+                rig.ApplyModifiedPropertiesWithoutUndo();
+                return PrefabUtility.SaveAsPrefabAsset(root, PlayerPrefabPath);
+            }
+            finally { Object.DestroyImmediate(root); }
+        }
+
+        internal static Material EnsureSurfaceMaterial(string folder, SurfaceSpec spec)
+        {
+            string path = folder + "/" + spec.Name + ".mat";
+            var material = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (material == null)
+            {
+                var shader = Shader.Find("Universal Render Pipeline/Lit");
+                if (shader == null) throw new InvalidOperationException("描画シェーダーが見つかりません: Universal Render Pipeline/Lit");
+                material = new Material(shader) { name = spec.Name };
+                AssetDatabase.CreateAsset(material, path);
+            }
+            material.color = spec.Color;
+            material.SetColor("_BaseColor", spec.Color);
+            material.SetFloat("_Smoothness", spec.Smoothness);
+            if (spec.Emissive)
+            {
+                material.EnableKeyword("_EMISSION");
+                material.SetColor("_EmissionColor", spec.Emission);
+            }
+            EditorUtility.SetDirty(material);
+            return material;
+        }
+
+        private static Material EnsureMaterial(string name, string shaderName, Color color, bool emission)
+        {
+            string path = RenderingFolder + "/" + name + ".mat";
+            var material = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (material == null)
+            {
+                var shader = Shader.Find(shaderName);
+                if (shader == null) throw new InvalidOperationException("描画シェーダーが見つかりません: " + shaderName);
+                material = new Material(shader) { name = name };
+                AssetDatabase.CreateAsset(material, path);
+            }
+            material.color = color;
+            if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
+            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", .05f);
+            if (emission)
+            {
+                material.EnableKeyword("_EMISSION");
+                material.SetColor("_EmissionColor", color * 3.5f);
+            }
+            EditorUtility.SetDirty(material);
+            return material;
+        }
+
+        private static void SetBoolean(SerializedObject target, string property, bool value)
+        {
+            var field = target.FindProperty(property);
+            if (field != null) field.boolValue = value;
+        }
+
+        private static void SetInteger(SerializedObject target, string property, int value)
+        {
+            var field = target.FindProperty(property);
+            if (field != null) field.intValue = value;
+        }
+
+        internal static void EnsureFolder(string folder)
+        {
+            if (AssetDatabase.IsValidFolder(folder)) return;
+            string parent = Path.GetDirectoryName(folder).Replace('\\', '/');
+            EnsureFolder(parent);
+            AssetDatabase.CreateFolder(parent, Path.GetFileName(folder));
+        }
+
+        [MenuItem("666号扉/Windows ビルド")]
+        public static void BuildWindows()
+        {
+            Setup();
+            Directory.CreateDirectory("Builds/Windows");
+            var scenes = new string[GameConstants.BuildScenes.Length];
+            for (int i = 0; i < scenes.Length; i++) scenes[i] = GameConstants.ScenePath(GameConstants.BuildScenes[i]);
+            var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions
+            {
+                scenes = scenes,
+                locationPathName = "Builds/Windows/666Door.exe",
+                target = BuildTarget.StandaloneWindows64,
+                options = BuildOptions.None
+            });
+            Debug.Log("666Door Windows build: " + report.summary.result + ", " + report.summary.totalSize + " bytes, " + report.summary.totalTime);
+            if (report.summary.result != BuildResult.Succeeded)
+                throw new InvalidOperationException("Windows ビルドに失敗しました: " + report.summary.totalErrors + " errors.");
+        }
+    }
+}
