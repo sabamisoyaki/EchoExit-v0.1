@@ -33,6 +33,11 @@ namespace Door666.Runtime
         private float chaseStepClock;
         private Vector3 previousPlayerPosition;
         private readonly List<Vector3> footstepTrail = new List<Vector3>();
+        private readonly Dictionary<int, float> stepLogTimes = new Dictionary<int, float>();
+        private bool pursuitWarned;
+
+        /// <summary>"ANM-001 目を離した箱": how this actor appears in the log.</summary>
+        public string LogName => Definition == null ? name : Definition.anomalyId + " " + Definition.displayName;
 
         public void Initialize(AnomalyDefinition definition, bool isAnomaly, Transform visualRoot, Transform player, Camera camera, float playerMoveSpeed)
         {
@@ -81,9 +86,12 @@ namespace Door666.Runtime
                 TickClue(ref snapshot, deltaTime);
                 effects.TickClue(age);
             }
+            int step = ritual.StepIndex;
             bool newlyRecognized = ritual.Tick(snapshot, deltaTime);
+            if (!newlyRecognized && ritual.StepIndex != step && GameLog.Verbose) LogStep(step, ritual.StepIndex);
             if (newlyRecognized)
             {
+                GameLog.Info("異変", LogName + ": 儀式が成立し、認識しました（出現から " + age.ToString("F1") + " 秒）" + (IsThreat ? "。追跡型です" : ""));
                 effects.Begin();
                 threat.Recognize();
                 Recognized?.Invoke(this);
@@ -99,6 +107,7 @@ namespace Door666.Runtime
                 if (threat.Tick(newlyRecognized ? 0 : deltaTime, distance, effects.IsActive))
                 {
                     if (agent != null && agent.isOnNavMesh) agent.isStopped = true;
+                    GameLog.Info("異変", LogName + ": プレイヤーを捕まえました（認識から " + threat.TimeSinceRecognition.ToString("F1") + " 秒）");
                     Caught?.Invoke(this);
                 }
                 else TickPursuit(deltaTime);
@@ -124,6 +133,7 @@ namespace Door666.Runtime
                     {
                         pendingFootstep = -1;
                         perception.AudioCue = true;
+                        GameLog.Detail("異変", LogName + ": 手がかり「" + clue.sound + "」を " + GameLog.Position(AudioCuePosition) + " で鳴らしました");
                         Emit(clue.sound, clue.subtitle, AudioCuePosition, clue.volume);
                     }
                 }
@@ -143,8 +153,31 @@ namespace Door666.Runtime
             if (!string.IsNullOrEmpty(clue.sound) && perception.Distance <= clue.distance && clueClock >= clue.interval)
             {
                 clueClock = 0;
+                GameLog.Detail("異変", LogName + ": 手がかり「" + clue.sound + "」を鳴らしました（距離 " + perception.Distance.ToString("F1") + "m）");
                 Emit(clue.sound, clue.subtitle, transform.position, clue.volume);
             }
+        }
+
+        /// <summary>"Gaze 1.5 秒 → LookAway 1 秒": the ritual as the log describes it.</summary>
+        public string DescribeSteps() => Definition == null ? "" : string.Join(" → ", Array.ConvertAll(Definition.ritualSteps, DescribeStep));
+
+        private static string DescribeStep(RitualStep step)
+        {
+            return step.condition + (step.gazeTarget == "AudioCue" ? "（音の方向）" : "") + (step.radius > 0 ? " 半径 " + step.radius + "m" : "")
+                + (step.duration > 0 ? " " + step.duration + " 秒" : "") + (step.timeWindow > 0 ? "（" + step.timeWindow + " 秒以内）" : "");
+        }
+
+        // Some rituals fall back and advance again every frame while the player walks (the breathing wall), so the same
+        // step change is logged at most once every two seconds.
+        private void LogStep(int from, int to)
+        {
+            int key = from * 64 + to;
+            if (stepLogTimes.TryGetValue(key, out float last) && age - last < 2) return;
+            stepLogTimes[key] = age;
+            var steps = Definition.ritualSteps;
+            GameLog.Info("異変", LogName + ": " + (to > from
+                ? "段階 " + to + "/" + steps.Length + "（" + DescribeStep(steps[from]) + "）成立 → 次は " + DescribeStep(steps[to])
+                : "段階 " + (from + 1) + "/" + steps.Length + "（" + DescribeStep(steps[from]) + "）が途切れ、段階 " + (to + 1) + "（" + DescribeStep(steps[to]) + "）からやり直し"));
         }
 
         private Vector3 PreviousFootfall(float behindDistance)
@@ -171,7 +204,11 @@ namespace Door666.Runtime
             if (!threat.CanChase) return;
             if (agent == null)
             {
-                if (!NavMesh.SamplePosition(transform.position, out var sample, 3, NavMesh.AllAreas)) return;
+                if (!NavMesh.SamplePosition(transform.position, out var sample, 3, NavMesh.AllAreas))
+                {
+                    WarnPursuit("近くにナビメッシュがないため追跡できません");
+                    return;
+                }
                 var visualPosition = VisualRoot.position;
                 transform.position = sample.position;
                 if (VisualRoot != transform) VisualRoot.position = visualPosition;
@@ -186,8 +223,13 @@ namespace Door666.Runtime
                 agent.autoBraking = false;
                 agent.autoRepath = true;
                 agent.Warp(sample.position);
+                GameLog.Info("異変", LogName + ": 追跡を開始（速度 " + threat.Speed.ToString("F1") + " m/s、" + GameLog.Position(sample.position) + " から）");
             }
-            if (!agent.isOnNavMesh) return;
+            if (!agent.isOnNavMesh)
+            {
+                WarnPursuit("ナビメッシュの外に出たため追跡できません");
+                return;
+            }
             agent.isStopped = false;
             repathClock -= deltaTime;
             if (repathClock <= 0)
@@ -201,6 +243,14 @@ namespace Door666.Runtime
                 chaseStepClock = 0;
                 SpatialAudio.Emit(transform, transform.position, "footstep", 0.75f);
             }
+        }
+
+        // Called every frame while it lasts, so it is reported once per actor.
+        private void WarnPursuit(string problem)
+        {
+            if (pursuitWarned) return;
+            pursuitWarned = true;
+            GameLog.Warning("異変", LogName + ": " + problem + "（位置 " + GameLog.Position(transform.position) + "）", this);
         }
 
         internal void Emit(string sound, string subtitle, Vector3 position, float volume = 0.7f)

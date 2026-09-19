@@ -49,7 +49,7 @@ namespace Door666.Editor
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
             if (!Application.isBatchMode) EditorSceneManager.OpenScene(GameConstants.ScenePath(GameConstants.TitleScene), OpenSceneMode.Single);
-            Debug.Log("666Door bootstrap complete. Start scene: " + GameConstants.ScenePath(GameConstants.TitleScene));
+            GameLog.Info("初期化", "プロジェクトの初期化が完了しました。開始シーン: " + GameConstants.ScenePath(GameConstants.TitleScene));
         }
 
         [MenuItem("666号扉/部屋シーンを作り直す（上書き）")]
@@ -250,7 +250,7 @@ namespace Door666.Editor
             var font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FontPath);
             if (font == null) throw new InvalidOperationException("日本語フォントがありません: " + FontPath);
             font.TryAddCharacters(CollectVisibleCharacters(), out string missing);
-            if (!string.IsNullOrEmpty(missing)) Debug.LogWarning("日本語フォントに未収録の文字: " + missing);
+            if (!string.IsNullOrEmpty(missing)) GameLog.Warning("初期化", "日本語フォントに未収録の文字: " + missing);
             foreach (var atlas in font.atlasTextures)
                 if (atlas != null && string.IsNullOrEmpty(AssetDatabase.GetAssetPath(atlas))) AssetDatabase.AddObjectToAsset(atlas, font);
             EditorUtility.SetDirty(font);
@@ -317,7 +317,7 @@ namespace Door666.Editor
             var model = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Art/bears.fbx");
             if (model == null)
             {
-                Debug.Log("Bear FBX is unavailable; the procedural bear will be used.");
+                GameLog.Info("初期化", "熊の FBX がないため、プリミティブで作った熊を使います。");
                 return;
             }
             var visual = Object.Instantiate(model);
@@ -538,7 +538,7 @@ namespace Door666.Editor
                 target = BuildTarget.StandaloneWindows64,
                 options = BuildOptions.None
             });
-            Debug.Log("666Door Windows build: " + report.summary.result + ", " + report.summary.totalSize + " bytes, " + report.summary.totalTime);
+            GameLog.Info("初期化", "Windows ビルド: " + report.summary.result + "、" + report.summary.totalSize + " バイト、" + report.summary.totalTime);
             if (report.summary.result != BuildResult.Succeeded)
                 throw new InvalidOperationException("Windows ビルドに失敗しました: " + report.summary.totalErrors + " errors.");
         }

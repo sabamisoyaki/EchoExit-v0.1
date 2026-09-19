@@ -26,13 +26,18 @@ namespace Door666.Runtime
         {
             if (placed == null || !placed.IsAnomaly) return null;
             var definition = owner.Definitions.FindByPrefab(placed.PrefabId);
-            if (definition == null) return null;
+            if (definition == null)
+            {
+                GameLog.Warning("異変", "「" + placed.PrefabId + "」は異変として置かれていますが、AnomalyDefinitions.json に定義がありません。儀式も手がかりも動きません。", placed);
+                return null;
+            }
             var actor = placed.gameObject.AddComponent<AnomalyActor>();
             actor.Initialize(definition, true, placed.VisualRoot, owner.Player.transform, owner.Player.View, owner.Settings.playerSpeed);
             actor.Recognized += OnRecognized;
             actor.Caught += OnCaught;
             actor.Subtitle += owner.UI.Subtitle;
             actors.Add(actor);
+            GameLog.Detail("異変", actor.LogName + ": 儀式を開始（" + actor.DescribeSteps() + "）位置 " + GameLog.Position(placed.transform.position));
             return actor;
         }
 

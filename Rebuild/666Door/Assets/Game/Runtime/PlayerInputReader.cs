@@ -34,7 +34,7 @@ namespace Door666.Runtime
             if (!string.IsNullOrEmpty(saved))
             {
                 try { Actions.LoadBindingOverridesFromJson(saved); }
-                catch (Exception) { Debug.LogWarning("キー設定を読み込めないため初期設定を使用します。"); }
+                catch (Exception exception) { GameLog.Warning("入力", "キー設定を読み込めないため初期設定を使用します: " + exception.Message); }
             }
             Actions.FindActionMap("Player", true).actionTriggered += OnAction;
             Actions.Enable();
@@ -57,11 +57,16 @@ namespace Door666.Runtime
                 .WithControlsExcluding("<Pointer>/delta")
                 .WithControlsExcluding("<Gamepad>")
                 .WithCancelingThrough("<Keyboard>/escape")
-                .OnCancel(_ => FinishRebinding(action, completed))
+                .OnCancel(_ =>
+                {
+                    GameLog.Info("入力", action.name + " のキー設定を取り消しました。");
+                    FinishRebinding(action, completed);
+                })
                 .OnComplete(_ =>
                 {
                     PlayerPrefs.SetString(GameConstants.BindingPreference, Actions.SaveBindingOverridesAsJson());
                     PlayerPrefs.Save();
+                    GameLog.Info("入力", action.name + " のキーを「" + action.GetBindingDisplayString(index) + "」に変更しました。");
                     FinishRebinding(action, completed);
                 });
             rebinding.Start();
@@ -80,6 +85,7 @@ namespace Door666.Runtime
             Actions.RemoveAllBindingOverrides();
             PlayerPrefs.DeleteKey(GameConstants.BindingPreference);
             PlayerPrefs.Save();
+            GameLog.Info("入力", "キー設定を初期設定に戻しました。");
         }
 
         public void Dispose()

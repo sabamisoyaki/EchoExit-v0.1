@@ -138,6 +138,7 @@ namespace Door666.Runtime
         public void SetMenuOpen(bool value)
         {
             if (!open) return;
+            if (MenuOpen != value) GameLog.Detail("編集", value ? "メニューを開きました（異変は停止）。" : "メニューを閉じました。");
             MenuOpen = value;
             anomalies.Suspend(value);
             if (value) HideGuides();
@@ -150,9 +151,16 @@ namespace Door666.Runtime
         {
             if (!open) return;
             var stage = game.Repository.Data.scenes.FirstOrDefault(value => value != null && value.sceneId == sceneId);
-            if (sceneId < 1 || stage == null) { game.UI.EditorMessage("指定した番号のステージはありません。"); return; }
+            if (sceneId < 1 || stage == null)
+            {
+                GameLog.Detail("編集", "ステージ " + sceneId + " はないため読み込めません。");
+                game.UI.EditorMessage("指定した番号のステージはありません。");
+                return;
+            }
             SetDraft(stage.Clone());
             int unknown = draft.items.Count(item => item != null && !game.World.Catalog.IsKnown(item.prefabId));
+            GameLog.Info("編集", "ステージ " + draft.sceneId + " を読み込み: 配置物 " + game.World.PlacedObjects.Count + " 個（うち異変 " + game.World.PlacedAnomalyCount + " 個）"
+                + (unknown > 0 ? "、未対応で表示しない配置物 " + unknown + " 個" : ""));
             game.UI.EditorMessage("ステージ " + draft.sceneId + " を読み込みました。"
                 + (unknown > 0 ? "\n未対応の配置物 " + unknown + " 個は表示しませんが、保存データには残します。" : ""));
         }
@@ -161,6 +169,7 @@ namespace Door666.Runtime
         {
             if (!open) return;
             SetDraft(new StageData { sceneId = StageRepository.NextSceneId(game.Repository.Data) });
+            GameLog.Info("編集", "新しいステージ " + draft.sceneId + " を作りました（未保存）。");
             game.UI.EditorMessage("新しいステージ " + draft.sceneId + " です。Shift を押しながら床を見て、クリックで置きます。");
         }
 
@@ -168,6 +177,7 @@ namespace Door666.Runtime
         {
             if (!open) return;
             category = anomaly;
+            GameLog.Detail("編集", category ? "異変として置くモード" : "通常オブジェクトとして置くモード");
             game.UI.EditorMessage(category ? "異変として置きます。" : "通常オブジェクトとして置きます。");
             RefreshUI();
         }
@@ -178,7 +188,12 @@ namespace Door666.Runtime
             if (!open || !game.World.Catalog.IsKnown(prefabId)) return;
             var definition = game.Definitions.FindByPrefab(prefabId);
             if (category && definition != null && !definition.userStageAllowed)
-            { game.UI.EditorMessage("この異変は公式ステージ専用です。"); return; }
+            {
+                GameLog.Detail("編集", game.World.Catalog.DisplayName(prefabId) + " は公式ステージ専用のため選べません。");
+                game.UI.EditorMessage("この異変は公式ステージ専用です。");
+                return;
+            }
+            GameLog.Info("編集", "置くもの: " + game.World.Catalog.DisplayName(prefabId) + "（" + (category ? "異変" : "通常") + "）");
             selectedPrefab = prefabId;
             placementYaw = 0;
             DestroyPreview();
@@ -222,9 +237,11 @@ namespace Door666.Runtime
             if (problem != null)
             {
                 item.rotation = previous;
+                GameLog.Detail("編集", game.World.Catalog.DisplayName(item.prefabId) + " を回転できません: " + problem);
                 game.UI.EditorMessage("回転できません。" + problem);
                 return;
             }
+            GameLog.Detail("編集", game.World.Catalog.DisplayName(item.prefabId) + " の向き " + Mathf.RoundToInt(previous.y) + "° → " + Mathf.RoundToInt(item.rotation.y) + "°");
             Respawn(target);
             game.World.RebuildNavigation();
             MarkDirty(game.World.Catalog.DisplayName(item.prefabId) + "の向きを " + Mathf.RoundToInt(item.rotation.y) + "° にしました。");
@@ -237,11 +254,13 @@ namespace Door666.Runtime
         {
             if (!open || target == null || !game.World.PlacedObjects.Contains(target)) return;
             string name = game.World.Catalog.DisplayName(target.PrefabId);
+            string removed = name + (target.IsAnomaly ? "（異変）" : "") + " " + GameLog.Position(target.transform.position);
             draft.items.Remove(target.Data);
             var actor = target.GetComponent<AnomalyActor>();
             if (actor != null) anomalies.Remove(actor);
             game.World.Remove(target);
             game.World.RebuildNavigation();
+            GameLog.Info("編集", "削除: " + removed + "。残り " + game.World.PlacedObjects.Count + " 個");
             if (outline != null) outline.enabled = false;
             MarkDirty(name + "を削除しました。保存すると反映されます。");
         }
@@ -250,7 +269,11 @@ namespace Door666.Runtime
         {
             if (!open || draft == null) return;
             if (!int.TryParse(sceneId, out int id) || id < 1)
-            { game.UI.EditorMessage("ステージ番号は1以上の整数にしてください。"); return; }
+            {
+                GameLog.Detail("編集", "ステージ番号「" + sceneId + "」では保存できません。");
+                game.UI.EditorMessage("ステージ番号は1以上の整数にしてください。");
+                return;
+            }
             var candidate = draft.Clone();
             candidate.sceneId = id;
             var context = ValidationContext();
@@ -276,12 +299,20 @@ namespace Door666.Runtime
             }
             if (!result.IsValid)
             {
+                GameLog.Warning("編集", "ステージ " + id + " は検証エラー " + result.Errors.Count + " 件のため保存しませんでした: " + string.Join(" / ", result.Errors));
                 game.UI.EditorMessage("保存できません。\n" + string.Join("\n", result.Errors.Take(3))
                     + (result.Errors.Count > 3 ? "\nほか " + (result.Errors.Count - 3) + " 件" : ""));
                 return;
             }
             var saved = game.Repository.SaveStage(candidate);
-            if (!saved.Success) { game.UI.EditorMessage(saved.Error); return; }
+            if (!saved.Success)
+            {
+                GameLog.Warning("編集", "ステージ " + id + " を保存できませんでした: " + saved.Error);
+                game.UI.EditorMessage(saved.Error);
+                return;
+            }
+            GameLog.Info("編集", "ステージ " + id + " を保存: 配置物 " + candidate.items.Count + " 個（うち異変 " + candidate.items.Count(item => item != null && item.isAnomaly) + " 個）→ "
+                + game.Repository.SavePath + (result.Warnings.Count > 0 ? "。注意: " + string.Join(" / ", result.Warnings) : ""));
             draft.sceneId = id;
             dirty = false;
             game.UI.EditorMessage("ステージ " + id + " を保存しました。"
@@ -313,6 +344,8 @@ namespace Door666.Runtime
             anomalies.Attach(placed);
             MarkInvisible(placed);
             game.World.RebuildNavigation();
+            GameLog.Info("編集", "配置: " + game.World.Catalog.DisplayName(item.prefabId) + (item.isAnomaly ? "（異変）" : "") + " " + GameLog.Position(ToVector(item.position))
+                + " 向き " + Mathf.RoundToInt(item.rotation.y) + "°。配置物 " + game.World.PlacedObjects.Count + " 個（うち異変 " + game.World.PlacedAnomalyCount + " 個）");
             MarkDirty(game.World.Catalog.DisplayName(item.prefabId) + "を置きました。" + (item.isAnomaly ? "その場で儀式を試せます。" : ""));
         }
 
@@ -349,7 +382,11 @@ namespace Door666.Runtime
             game.UI.Prompt("重なり " + StageValidator.Percent(check.Overlap) + (check.Heavy ? "（大）" : "")
                 + "     向き " + Mathf.RoundToInt(item.rotation.y) + "°" + (coarse ? "     0.25m・45°刻み" : ""));
             if (!clicked) return;
-            if (check.Problem != null) game.UI.EditorMessage(check.Problem);
+            if (check.Problem != null)
+            {
+                GameLog.Detail("編集", game.World.Catalog.DisplayName(item.prefabId) + " を " + GameLog.Position(ToVector(item.position)) + " に置けません: " + check.Problem);
+                game.UI.EditorMessage(check.Problem);
+            }
             else Place(item);
         }
 
@@ -482,6 +519,7 @@ namespace Door666.Runtime
             {
                 var placed = actor == null ? null : actor.GetComponent<StageObject>();
                 if (placed == null || !game.World.PlacedObjects.Contains(placed)) continue;
+                GameLog.Info("編集", "捕まったので " + actor.LogName + " を元の位置・未認識の状態に戻しました（編集は続行）。");
                 game.UI.CaughtWhileEditing(game.World.Catalog.DisplayName(placed.PrefabId));
                 Respawn(placed);
             }

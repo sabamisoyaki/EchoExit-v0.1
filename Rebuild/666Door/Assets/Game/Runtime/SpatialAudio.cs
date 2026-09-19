@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Object = UnityEngine.Object;
 
 namespace Door666.Runtime
 {
@@ -7,6 +9,7 @@ namespace Door666.Runtime
     public static class SpatialAudio
     {
         private static readonly Dictionary<string, AudioClip> Clips = new Dictionary<string, AudioClip>();
+        private static readonly HashSet<string> ReportedUnknown = new HashSet<string>();
         private static SoundLibrary library;
 
         public static void Emit(Transform owner, Vector3 position, string kind, float volume = 0.5f)
@@ -25,6 +28,8 @@ namespace Door666.Runtime
                 if (assigned != null) volume *= assigned.volume;
                 if (!Clips.TryGetValue(kind, out clip) || clip == null)
                 {
+                    if (assigned == null && Array.FindIndex(SoundLibrary.KnownSounds, known => known.Key == kind) < 0 && ReportedUnknown.Add(kind))
+                        GameLog.Warning("音", "音「" + kind + "」は SoundLibrary.KnownSounds にない名前です。既定の雑音で鳴らします。");
                     clip = CreateClip(kind);
                     Clips[kind] = clip;
                 }

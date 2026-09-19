@@ -21,5 +21,9 @@ namespace Door666.Runtime
         [Range(0f, 1f)] public float heavyOverlapRatio = .25f;
         [Tooltip("重なりの大きい異変は、重なりの小さい異変をこの数だけ置いたうえで、それを超える分だけ置ける。")]
         [Min(0)] public int clearAnomaliesRequired = 3;
+
+        [Header("ログ")]
+        [Tooltip("儀式の各段階・手がかり・ボタン操作・編集の細かい操作もコンソールに出す（「[666Door]」で絞り込める）。")]
+        public bool verboseLogging;
     }
 }

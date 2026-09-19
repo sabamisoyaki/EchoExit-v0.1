@@ -29,6 +29,7 @@
 - 異変を動かす処理（`AnomalyActorSet`）は、Game と EditMode で共通です。
 - 異変の上限や配置の重なりのルールは `Assets/Resources/GameSettings.asset` で調整します。
 - `UnityEngine.Object` に `??` / `?.` を使わないでください（Unity の擬似 null を素通りするため。過去に一括で直しています）。
+- ログは `Debug.Log` を直接使わず、`GameLog`（`Info` / `Detail` / `Warning` / `Error`）で `[666Door][分類]` 付きで出します。毎フレーム起きうることは `Detail`（`GameSettings.asset` の「詳細ログ」がオンのときだけ）にし、同じ内容を繰り返し出さないでください。各画面シーンの起動の終わりに「起動完了 … 警告・エラーなし」が出るのが正常です（`現状実装まとめ.md` §8.1）。
 
 ## 4. Unity の実行と検証
 
