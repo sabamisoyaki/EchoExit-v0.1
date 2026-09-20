@@ -83,7 +83,7 @@ namespace Door666.Runtime
         {
             if (item == null || !IsKnown(item.prefabId))
             {
-                Debug.LogWarning("配置モデルが見つかりません。元データは保持します: " + (item == null ? "null" : item.prefabId));
+                GameLog.Warning("部屋", "配置モデルが見つかりません。元データは保持します: " + (item == null ? "null" : item.prefabId));
                 return null;
             }
 

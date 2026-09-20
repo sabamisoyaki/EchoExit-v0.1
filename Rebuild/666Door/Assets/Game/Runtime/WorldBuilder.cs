@@ -38,20 +38,32 @@ namespace Door666.Runtime
             Clear();
             FieldRoot.ApplyAtmosphere();
 
-            int chasing = 0;
+            int chasing = 0, withheld = 0, overCap = 0, extraChasers = 0, unknown = 0;
             if (stage != null && stage.items != null)
             {
                 foreach (var item in stage.items)
                 {
                     if (item == null) continue;
-                    if (item.isAnomaly && (!includeAnomalies || (enforceRoundRules && PlacedAnomalyCount >= Mathf.Max(0, maxAnomalies)))) continue;
+                    if (item.isAnomaly && !includeAnomalies) { withheld++; continue; }
+                    if (item.isAnomaly && enforceRoundRules && PlacedAnomalyCount >= Mathf.Max(0, maxAnomalies)) { overCap++; continue; }
                     var definition = anomalyDefinitions == null ? null : anomalyDefinitions.FindByPrefab(item.prefabId);
                     bool pursuit = item.isAnomaly && definition != null && definition.IsThreat;
-                    if (enforceRoundRules && pursuit && chasing > 0) continue;
-                    if (Add(item) != null && pursuit) chasing++;
+                    if (enforceRoundRules && pursuit && chasing > 0) { extraChasers++; continue; }
+                    var instance = Add(item);
+                    if (instance == null) unknown++;
+                    else if (pursuit) chasing++;
                 }
             }
             RebuildNavigation();
+
+            var excluded = new List<string>();
+            if (overCap > 0) excluded.Add("異変の上限 " + maxAnomalies + " 個を超えた異変 " + overCap + " 個");
+            if (extraChasers > 0) excluded.Add("2体目以降の追跡型 " + extraChasers + " 個");
+            if (unknown > 0) excluded.Add("未対応の配置物 " + unknown + " 個");
+            string summary = "ステージ " + (stage == null ? 0 : stage.sceneId) + " を配置: " + placed.Count + " 個（うち異変 " + PlacedAnomalyCount + " 個）"
+                + (withheld > 0 ? "、異変なしの回のため異変 " + withheld + " 個を外しました" : "");
+            if (excluded.Count > 0) GameLog.Info("部屋", summary + "。除外: " + string.Join("、", excluded));
+            else GameLog.Detail("部屋", summary);
         }
 
         /// <summary>Creates one item under the field's placements. Call <see cref="RebuildNavigation"/> after changing the layout.</summary>
@@ -81,6 +93,8 @@ namespace Door666.Runtime
             var previousData = surface.navMeshData;
             surface.BuildNavMesh();
             if (previousData != null && previousData != surface.navMeshData) ObjectCatalog.DestroyObject(previousData);
+            if (surface.navMeshData == null) GameLog.Warning("部屋", "ナビメッシュを作れませんでした。追跡型の異変が動けません。", surface);
+            else GameLog.Detail("部屋", "ナビメッシュを作り直しました。");
         }
 
         public void Clear()

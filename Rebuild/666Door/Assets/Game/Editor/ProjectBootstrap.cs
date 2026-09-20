@@ -44,12 +44,13 @@ namespace Door666.Editor
             ExportBearVisual();
             EnsureCatalogMaterials();
             InterfaceBuilder.EnsurePrefabs();
+            EnsurePlayerHand();
             EnsureScenes();
             AddFontCharacters();
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
             if (!Application.isBatchMode) EditorSceneManager.OpenScene(GameConstants.ScenePath(GameConstants.TitleScene), OpenSceneMode.Single);
-            Debug.Log("666Door bootstrap complete. Start scene: " + GameConstants.ScenePath(GameConstants.TitleScene));
+            GameLog.Info("初期化", "プロジェクトの初期化が完了しました。開始シーン: " + GameConstants.ScenePath(GameConstants.TitleScene));
         }
 
         [MenuItem("666号扉/部屋シーンを作り直す（上書き）")]
@@ -250,7 +251,7 @@ namespace Door666.Editor
             var font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FontPath);
             if (font == null) throw new InvalidOperationException("日本語フォントがありません: " + FontPath);
             font.TryAddCharacters(CollectVisibleCharacters(), out string missing);
-            if (!string.IsNullOrEmpty(missing)) Debug.LogWarning("日本語フォントに未収録の文字: " + missing);
+            if (!string.IsNullOrEmpty(missing)) GameLog.Warning("初期化", "日本語フォントに未収録の文字: " + missing);
             foreach (var atlas in font.atlasTextures)
                 if (atlas != null && string.IsNullOrEmpty(AssetDatabase.GetAssetPath(atlas))) AssetDatabase.AddObjectToAsset(atlas, font);
             EditorUtility.SetDirty(font);
@@ -291,7 +292,7 @@ namespace Door666.Editor
 
         /// <summary>Creates SoundLibrary.asset and lists every sound in it, so a clip can be assigned to each by hand.
         /// Assigned clips and volumes are kept.</summary>
-        internal static void EnsureSoundLibrary()
+        public static void EnsureSoundLibrary()
         {
             string path = "Assets/Resources/" + GameConstants.SoundsResource + ".asset";
             var library = AssetDatabase.LoadAssetAtPath<SoundLibrary>(path);
@@ -317,7 +318,7 @@ namespace Door666.Editor
             var model = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Art/bears.fbx");
             if (model == null)
             {
-                Debug.Log("Bear FBX is unavailable; the procedural bear will be used.");
+                GameLog.Info("初期化", "熊の FBX がないため、プリミティブで作った熊を使います。");
                 return;
             }
             var visual = Object.Instantiate(model);
@@ -458,6 +459,60 @@ namespace Door666.Editor
             finally { Object.DestroyImmediate(root); }
         }
 
+        private const string PlayerMaterialFolder = "Assets/Prefabs/Materials";
+        private static readonly SurfaceSpec HandSkin = new SurfaceSpec("Hand skin", new Color(.55f, .42f, .34f), .22f);
+        private static readonly SurfaceSpec HandSleeve = new SurfaceSpec("Worn sleeve", new Color(.075f, .078f, .07f), .04f);
+
+        /// <summary>Adds the striking hand under the player's camera when Player.prefab has none. An existing hand, and any
+        /// change made to it by hand, is left as it is.</summary>
+        public static void EnsurePlayerHand()
+        {
+            if (EnsurePlayerPrefab().GetComponentInChildren<FirstPersonHand>(true) != null) return;
+            EnsureFolder(PlayerMaterialFolder);
+            var skin = EnsureSurfaceMaterial(PlayerMaterialFolder, HandSkin);
+            var sleeve = EnsureSurfaceMaterial(PlayerMaterialFolder, HandSleeve);
+            var root = PrefabUtility.LoadPrefabContents(PlayerPrefabPath);
+            try
+            {
+                var eyes = root.GetComponentInChildren<Camera>(true);
+                if (eyes == null) throw new InvalidOperationException(PlayerPrefabPath + " にカメラがありません。");
+                var hand = new GameObject("Hand", typeof(FirstPersonHand));
+                hand.transform.SetParent(eyes.transform, false);
+                // The hand's origin is the fist, so it can stop on a surface; the arm reaches back toward the lower right.
+                var model = new GameObject("Model");
+                model.transform.SetParent(hand.transform, false);
+                HandPart(model.transform, "Fist", PrimitiveType.Cube, Vector3.zero, new Vector3(.085f, .075f, .095f), Vector3.zero, skin);
+                HandPart(model.transform, "Thumb", PrimitiveType.Cube, new Vector3(-.047f, .016f, -.008f), new Vector3(.026f, .03f, .062f), new Vector3(0, 12, 0), skin);
+                HandPart(model.transform, "Forearm", PrimitiveType.Capsule, new Vector3(0, -.006f, -.17f), new Vector3(.068f, .13f, .062f), new Vector3(90, 0, 0), skin);
+                HandPart(model.transform, "Sleeve", PrimitiveType.Cylinder, new Vector3(0, -.008f, -.33f), new Vector3(.1f, .1f, .095f), new Vector3(90, 0, 0), sleeve);
+                var component = hand.GetComponent<FirstPersonHand>();
+                var binding = new SerializedObject(component);
+                binding.FindProperty("model").objectReferenceValue = model;
+                binding.ApplyModifiedPropertiesWithoutUndo();
+                component.Hide();
+                var rig = new SerializedObject(root.GetComponent<FirstPersonRig>());
+                rig.FindProperty("hand").objectReferenceValue = component;
+                rig.ApplyModifiedPropertiesWithoutUndo();
+                PrefabUtility.SaveAsPrefabAsset(root, PlayerPrefabPath);
+            }
+            finally { PrefabUtility.UnloadPrefabContents(root); }
+        }
+
+        private static void HandPart(Transform parent, string name, PrimitiveType type, Vector3 position, Vector3 scale, Vector3 angles, Material material)
+        {
+            var part = GameObject.CreatePrimitive(type);
+            part.name = name;
+            // The hand must never block the gaze ray or push the player.
+            Object.DestroyImmediate(part.GetComponent<Collider>());
+            part.transform.SetParent(parent, false);
+            part.transform.localPosition = position;
+            part.transform.localRotation = Quaternion.Euler(angles);
+            part.transform.localScale = scale;
+            var renderer = part.GetComponent<MeshRenderer>();
+            renderer.sharedMaterial = material;
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+        }
+
         internal static Material EnsureSurfaceMaterial(string folder, SurfaceSpec spec)
         {
             string path = folder + "/" + spec.Name + ".mat";
@@ -538,7 +593,7 @@ namespace Door666.Editor
                 target = BuildTarget.StandaloneWindows64,
                 options = BuildOptions.None
             });
-            Debug.Log("666Door Windows build: " + report.summary.result + ", " + report.summary.totalSize + " bytes, " + report.summary.totalTime);
+            GameLog.Info("初期化", "Windows ビルド: " + report.summary.result + "、" + report.summary.totalSize + " バイト、" + report.summary.totalTime);
             if (report.summary.result != BuildResult.Succeeded)
                 throw new InvalidOperationException("Windows ビルドに失敗しました: " + report.summary.totalErrors + " errors.");
         }

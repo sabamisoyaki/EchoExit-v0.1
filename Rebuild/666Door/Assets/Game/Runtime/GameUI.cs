@@ -150,6 +150,7 @@ namespace Door666.Runtime
         private void Perform(UIAction action)
         {
             if (game.Input.IsRebinding) return;
+            GameLog.Detail("画面", "ボタン: " + action);
             var editor = StageEditor;
             switch (action)
             {
@@ -166,6 +167,7 @@ namespace Door666.Runtime
                 case UIAction.ToggleSubtitles:
                     game.SubtitlesEnabled = !game.SubtitlesEnabled;
                     PlayerPrefs.SetInt(GameConstants.SubtitlePreference, game.SubtitlesEnabled ? 1 : 0);
+                    GameLog.Info("画面", "音の字幕を" + (game.SubtitlesEnabled ? "オン" : "オフ") + "にしました。");
                     settings.Refresh();
                     break;
                 case UIAction.ResetBindings:

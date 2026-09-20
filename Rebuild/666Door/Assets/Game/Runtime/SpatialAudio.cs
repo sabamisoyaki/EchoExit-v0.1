@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Object = UnityEngine.Object;
 
 namespace Door666.Runtime
 {
@@ -7,6 +9,7 @@ namespace Door666.Runtime
     public static class SpatialAudio
     {
         private static readonly Dictionary<string, AudioClip> Clips = new Dictionary<string, AudioClip>();
+        private static readonly HashSet<string> ReportedUnknown = new HashSet<string>();
         private static SoundLibrary library;
 
         public static void Emit(Transform owner, Vector3 position, string kind, float volume = 0.5f)
@@ -25,6 +28,8 @@ namespace Door666.Runtime
                 if (assigned != null) volume *= assigned.volume;
                 if (!Clips.TryGetValue(kind, out clip) || clip == null)
                 {
+                    if (assigned == null && Array.FindIndex(SoundLibrary.KnownSounds, known => known.Key == kind) < 0 && ReportedUnknown.Add(kind))
+                        GameLog.Warning("音", "音「" + kind + "」は SoundLibrary.KnownSounds にない名前です。既定の雑音で鳴らします。");
                     clip = CreateClip(kind);
                     Clips[kind] = clip;
                 }
@@ -49,7 +54,7 @@ namespace Door666.Runtime
         private static AudioClip CreateClip(string kind)
         {
             const int rate = 22050;
-            float duration = kind == "hum" ? 1.8f : kind == "doubleBreath" ? 1.6f : kind == "footstep" ? 0.28f : 0.9f;
+            float duration = kind == "hum" ? 1.8f : kind == "doubleBreath" ? 1.6f : kind == "footstep" ? 0.28f : kind == "knock" ? 0.22f : 0.9f;
             int count = Mathf.CeilToInt(duration * rate);
             var samples = new float[count];
             float filtered = 0;
@@ -69,6 +74,7 @@ namespace Door666.Runtime
                     case "reverse": value = (filtered * 0.65f + Mathf.Sin(2 * Mathf.PI * (150 * time + 220 * time * time)) * 0.28f) * phase * phase; break;
                     case "footstep": value = (filtered * 0.7f + Mathf.Sin(2 * Mathf.PI * 82 * time) * 0.4f) * Mathf.Exp(-time * 20); envelope = Mathf.Min(1, time * 300); break;
                     case "wet": value = (noise * 0.3f + filtered) * Mathf.Exp(-time * 8); break;
+                    case "knock": value = (Mathf.Sin(2 * Mathf.PI * 96 * time) * 0.9f + Mathf.Sin(2 * Mathf.PI * 211 * time) * 0.3f + filtered * 0.8f) * Mathf.Exp(-time * 26); envelope = Mathf.Min(1, time * 500); break;
                     case "wood": value = (Mathf.Sin(2 * Mathf.PI * 176 * time) + Mathf.Sin(2 * Mathf.PI * 391 * time) * 0.4f + noise * 0.2f) * Mathf.Exp(-time * 9); break;
                     case "contract": value = Mathf.Sin(2 * Mathf.PI * (260 * time - 100 * time * time)) * 0.35f + filtered * 0.5f; break;
                     case "cloth": value = filtered * Mathf.Sin(time * 35) * 1.4f; break;
