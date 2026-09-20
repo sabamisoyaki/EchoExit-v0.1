@@ -127,7 +127,9 @@ namespace Door666.Runtime
             bool aiming = keyboard != null && (keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed);
             bool clicked = game.Input.Hit.WasPressedThisFrame();
             // While aiming, the click places instead of striking.
-            anomalies.Tick(gazed, clicked && !aiming, dt);
+            bool strike = clicked && !aiming;
+            if (strike) game.Player.Strike(gaze);
+            anomalies.Tick(gazed, strike, dt);
             ProcessResets();
 
             if (aiming) AimPlacement(view, keyboard, clicked);

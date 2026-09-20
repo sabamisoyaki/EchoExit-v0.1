@@ -63,3 +63,7 @@ MonoBehaviour:
     clip: {fileID: 0}
     volume: 1
     usage: "\u4E00\u6B69\u591A\u3044\u8DB3\u97F3\u3092\u8A8D\u8B58\u3057\u305F\u3068\u304D"
+  - key: knock
+    clip: {fileID: 0}
+    volume: 1
+    usage: "\u53E9\u3044\u305F\u624B\u304C\u7269\u306B\u5F53\u305F\u3063\u305F\u3068\u304D"

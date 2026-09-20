@@ -54,7 +54,7 @@ namespace Door666.Runtime
         private static AudioClip CreateClip(string kind)
         {
             const int rate = 22050;
-            float duration = kind == "hum" ? 1.8f : kind == "doubleBreath" ? 1.6f : kind == "footstep" ? 0.28f : 0.9f;
+            float duration = kind == "hum" ? 1.8f : kind == "doubleBreath" ? 1.6f : kind == "footstep" ? 0.28f : kind == "knock" ? 0.22f : 0.9f;
             int count = Mathf.CeilToInt(duration * rate);
             var samples = new float[count];
             float filtered = 0;
@@ -74,6 +74,7 @@ namespace Door666.Runtime
                     case "reverse": value = (filtered * 0.65f + Mathf.Sin(2 * Mathf.PI * (150 * time + 220 * time * time)) * 0.28f) * phase * phase; break;
                     case "footstep": value = (filtered * 0.7f + Mathf.Sin(2 * Mathf.PI * 82 * time) * 0.4f) * Mathf.Exp(-time * 20); envelope = Mathf.Min(1, time * 300); break;
                     case "wet": value = (noise * 0.3f + filtered) * Mathf.Exp(-time * 8); break;
+                    case "knock": value = (Mathf.Sin(2 * Mathf.PI * 96 * time) * 0.9f + Mathf.Sin(2 * Mathf.PI * 211 * time) * 0.3f + filtered * 0.8f) * Mathf.Exp(-time * 26); envelope = Mathf.Min(1, time * 500); break;
                     case "wood": value = (Mathf.Sin(2 * Mathf.PI * 176 * time) + Mathf.Sin(2 * Mathf.PI * 391 * time) * 0.4f + noise * 0.2f) * Mathf.Exp(-time * 9); break;
                     case "contract": value = Mathf.Sin(2 * Mathf.PI * (260 * time - 100 * time * time)) * 0.35f + filtered * 0.5f; break;
                     case "cloth": value = filtered * Mathf.Sin(time * 35) * 1.4f; break;

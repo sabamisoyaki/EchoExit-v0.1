@@ -52,8 +52,10 @@ namespace Door666.Runtime
             UI.DoorPrompt(door, door != null ? Input.Binding(Input.Interact) : "");
             // Door input takes precedence, immediately closes the round, and freezes pursuit.
             if (door != null && Input.Interact.WasPressedThisFrame()) { ChooseDoor(door.IsForward); return; }
+            bool strike = Input.Hit.WasPressedThisFrame();
+            if (strike) Player.Strike(hit);
             // A capture ends the run and suspends every actor, so the remaining actors skip this frame.
-            anomalies.Tick(target, Input.Hit.WasPressedThisFrame(), dt);
+            anomalies.Tick(target, strike, dt);
         }
 
         /// <summary>Starts a fresh run in place; retrying from the ending does not reload the scene.</summary>

@@ -45,6 +45,30 @@ namespace Door666.Tests
             Assert.That(NavMesh.CalculatePath(start.position, end.position, NavMesh.AllAreas, path), Is.True);
             Assert.That(path.status, Is.EqualTo(NavMeshPathStatus.PathComplete));
             Capture(game, "02-exploration.png");
+
+            // The hand shows only while it strikes, and never blocks the gaze ray.
+            var hand = game.Player.Hand;
+            Assert.That(hand, Is.Not.Null, "Player.prefab has no striking hand.");
+            Assert.That(hand.GetComponentsInChildren<Collider>(true), Is.Empty);
+            Assert.That(hand.GetComponentsInChildren<Renderer>(), Is.Empty, "The hand must be hidden before striking.");
+            var view = game.Player.View.transform;
+            Assert.That(Physics.Raycast(view.position, view.forward, out var wall, 30, ~0, QueryTriggerInteraction.Ignore), Is.True);
+            game.Player.Strike(wall);
+            Assert.That(hand.IsStriking, Is.True);
+            Assert.That(hand.GetComponentsInChildren<Renderer>(), Is.Not.Empty);
+            bool kicked = false;
+            for (int frame = 0; frame < 300 && hand.IsStriking && !kicked; frame++)
+            {
+                yield return null;
+                kicked = hand.ViewKick > 0;
+            }
+            Assert.That(kicked, Is.True, "Striking a surface kicks the view.");
+            Assert.That(view.InverseTransformPoint(hand.transform.position).z, Is.LessThanOrEqualTo(wall.distance), "The fist must stop in front of the surface.");
+            Capture(game, "02-strike.png");
+            for (int frame = 0; frame < 300 && hand.IsStriking; frame++) yield return null;
+            Assert.That(hand.IsStriking, Is.False);
+            Assert.That(hand.GetComponentsInChildren<Renderer>(), Is.Empty, "The hand must hide after the strike.");
+
             double pausedTime = game.Session.RemainingSeconds;
             game.Pause();
             yield return new WaitForSecondsRealtime(.1f);
